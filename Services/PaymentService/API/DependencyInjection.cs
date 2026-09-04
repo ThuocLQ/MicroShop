@@ -1,4 +1,6 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.RateLimiting;
 using PaymentService.API.Endpoints;
 using PaymentService.Application.Payments.CreatePayment;
 using PaymentService.Application.Payments.Webhooks;
@@ -18,6 +20,20 @@ public static class DependencyInjection
         services.AddProblemDetails();
         services.AddEndpointsApiExplorer();
         services.AddMicroShopJwtAuthentication(configuration, environment);
+
+        var webhookOptions = configuration.GetSection(PaymentWebhookOptions.SectionName).Get<PaymentWebhookOptions>()
+            ?? new PaymentWebhookOptions();
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddFixedWindowLimiter(PaymentWebhookRateLimiter.PolicyName, limiter =>
+            {
+                limiter.PermitLimit = webhookOptions.PermitLimit;
+                limiter.Window = TimeSpan.FromSeconds(webhookOptions.WindowSeconds);
+                limiter.QueueLimit = 0;
+                limiter.AutoReplenishment = true;
+            });
+        });
 
         return services;
     }
@@ -86,4 +102,9 @@ public static class DependencyInjection
 
         return app;
     }
+}
+
+internal static class PaymentWebhookRateLimiter
+{
+    public const string PolicyName = "payment-webhooks";
 }

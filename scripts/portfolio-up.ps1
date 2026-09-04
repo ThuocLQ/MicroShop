@@ -9,7 +9,8 @@ param(
     [switch]$SkipSeed,
     [string]$StorefrontPublicOrigin,
     [string]$OperationsPublicOrigin,
-    [switch]$RecreateFrontends
+    [switch]$RecreateFrontends,
+    [switch]$RecreatePaymentService
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,8 +52,8 @@ if ($hasOperationsPublicOrigin -and -not $hasStorefrontPublicOrigin) {
     throw "OperationsPublicOrigin requires StorefrontPublicOrigin."
 }
 
-if ($RecreateFrontends -and -not $hasStorefrontPublicOrigin) {
-    throw "RecreateFrontends requires an exact HTTPS StorefrontPublicOrigin."
+if (($RecreateFrontends -or $RecreatePaymentService) -and -not $hasStorefrontPublicOrigin) {
+    throw "RecreateFrontends and RecreatePaymentService require an exact HTTPS StorefrontPublicOrigin."
 }
 
 if ($hasStorefrontPublicOrigin) {
@@ -93,11 +94,15 @@ try {
         [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process")
     }
 
-    if ($RecreateFrontends) {
-        Write-Host "Applying exact public origins and secure cookies to portfolio frontends..."
+    if ($RecreateFrontends -or $RecreatePaymentService) {
+        Write-Host "Applying exact public origin configuration to portfolio services..."
         $frontendServices = @("storefront")
         if ($hasOperationsPublicOrigin) {
             $frontendServices += "operations"
+        }
+
+        if ($RecreatePaymentService) {
+            $frontendServices += "paymentservice"
         }
 
         & docker compose @composeArgs up -d --no-deps --force-recreate @frontendServices

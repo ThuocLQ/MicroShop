@@ -10,6 +10,7 @@ A feature may start only when all are true:
 - [ ] UI state matrix and real data source are defined.
 - [ ] Failure, duplicate, timeout and compensation behavior are defined.
 - [ ] Test plan and release evidence are defined.
+- [ ] Third-party dependencies are classified as mock, sandbox, or live. Required merchant/account access, secrets, callback URLs, and external acceptance evidence are explicit; no fake adapter is used to conceal a blocker.
 
 ## Definition of Done
 
@@ -29,6 +30,7 @@ A feature may start only when all are true:
 - [ ] Migration upgrade and rollback behavior are understood.
 - [ ] Release owner records deployed image/tag and rollback target.
 - [ ] For financial changes: provider sandbox/live webhook, duplicate callback and reconciliation drill pass.
+- [ ] A third-party integration is described truthfully in release notes: code-ready, sandbox-verified, or live-verified. Only the latter two may be called integrated.
 
 ## Evidence matrix
 

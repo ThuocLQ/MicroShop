@@ -161,7 +161,9 @@ public sealed class Payment
             return;
         }
 
-        if (Status is not (PaymentStatus.CapturePending or PaymentStatus.VoidPending))
+        // A provider may auto-capture immediately after authorization, so its verified
+        // lifecycle event is sufficient evidence even without a local capture request.
+        if (Status is not (PaymentStatus.Authorized or PaymentStatus.CapturePending or PaymentStatus.VoidPending))
         {
             throw new InvalidOperationException($"Payment in status '{Status}' cannot be captured.");
         }

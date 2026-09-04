@@ -46,7 +46,8 @@ public sealed record PaymentProviderAction(
 public sealed record PaymentProviderDescriptor(
     string Name,
     bool IsSandbox,
-    bool RequiresRedirect);
+    bool RequiresRedirect,
+    IReadOnlyList<string> SupportedCurrencies);
 
 public sealed record PaymentProviderActionRequest(
     Guid PaymentId,

@@ -95,7 +95,7 @@ public sealed class CreatePaymentFromOrderTests
         }
 
         public IReadOnlyList<PaymentProviderDescriptor> GetAvailableProviders() =>
-            [new PaymentProviderDescriptor(Name, true, false)];
+            [new PaymentProviderDescriptor(Name, true, false, PaymentProviderPolicy.GetSupportedCurrencies(Name))];
         public Task<PaymentProviderAction> CreateActionAsync(PaymentProviderActionRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PaymentProviderAction(Name, $"sandbox-session-{request.PaymentId:N}", null, DateTime.UtcNow.AddMinutes(30)));
         public Task<PaymentProviderWebhook?> RequestCaptureAsync(DomainPayment payment, CancellationToken cancellationToken = default) => Task.FromResult<PaymentProviderWebhook?>(null);

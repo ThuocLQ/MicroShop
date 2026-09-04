@@ -79,7 +79,16 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Portfolio
       ServiceDefaults__ExposeHealthEndpoints: 'true'
-      PaymentProvider__Provider: Sandbox
+      PaymentProvider__Provider: ${MICROSHOP_PAYMENT_PROVIDER:-Sandbox}
+      PaymentProvider__EnabledProviders__0: ${MICROSHOP_PAYMENT_PROVIDER:-Sandbox}
+      PaymentProvider__PayPal__Enabled: ${MICROSHOP_PAYPAL_ENABLED:-false}
+      PaymentProvider__MoMo__Enabled: ${MICROSHOP_MOMO_ENABLED:-false}
+      PaymentProvider__MoMo__UseSandbox: ${MICROSHOP_MOMO_USE_SANDBOX:-true}
+      PaymentProvider__MoMo__PartnerCode: ${MICROSHOP_MOMO_PARTNER_CODE:-SET_BY_ENVIRONMENT}
+      PaymentProvider__MoMo__AccessKey: ${MICROSHOP_MOMO_ACCESS_KEY:-SET_BY_ENVIRONMENT}
+      PaymentProvider__MoMo__SecretKey: ${MICROSHOP_MOMO_SECRET_KEY:-SET_BY_ENVIRONMENT}
+      PaymentProvider__MoMo__RedirectUrl: ${MICROSHOP_STOREFRONT_PUBLIC_ORIGIN:-https://shop.invalid}/payment/return
+      PaymentProvider__MoMo__IpnUrl: ${MICROSHOP_STOREFRONT_PUBLIC_ORIGIN:-https://shop.invalid}/webhooks/momo
 
   orderqueryservice:
     mem_limit: 256m

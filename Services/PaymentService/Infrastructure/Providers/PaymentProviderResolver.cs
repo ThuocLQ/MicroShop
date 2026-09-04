@@ -13,11 +13,19 @@ public sealed class PaymentProviderResolver : IPaymentProviderResolver
         IOptions<PaymentProviderOptions> options)
     {
         _options = options.Value;
-        _providers = providers.ToDictionary(provider => provider.Name, StringComparer.OrdinalIgnoreCase);
+        var enabledProviderNames = _options.GetEnabledProviderNames();
+        _providers = providers
+            .Where(provider => enabledProviderNames.Contains(provider.Name))
+            .ToDictionary(provider => provider.Name, StringComparer.OrdinalIgnoreCase);
 
         if (_providers.Count == 0)
         {
-            throw new InvalidOperationException("At least one payment provider must be registered.");
+            throw new InvalidOperationException("At least one enabled payment provider must be registered.");
+        }
+
+        if (!_providers.ContainsKey(_options.Provider))
+        {
+            throw new InvalidOperationException("The configured default payment provider is not registered and enabled.");
         }
     }
 
@@ -41,6 +49,7 @@ public sealed class PaymentProviderResolver : IPaymentProviderResolver
             .Select(provider => new PaymentProviderDescriptor(
                 provider.Name,
                 string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase),
-                !string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase)))
+                !string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase),
+                PaymentProviderPolicy.GetSupportedCurrencies(provider.Name)))
             .ToList();
 }

@@ -31,8 +31,23 @@ public static class DependencyInjection
         services.AddPostgresReadinessCheck(configuration, "PaymentDb");
         services.AddRabbitMqReadinessCheck(configuration);
 
-        var providerKind = configuration[$"{PaymentProviderOptions.SectionName}:Provider"]?.Trim();
-        if (string.Equals(providerKind, "Sandbox", StringComparison.OrdinalIgnoreCase))
+        var paymentProviderOptions = configuration
+            .GetSection(PaymentProviderOptions.SectionName)
+            .Get<PaymentProviderOptions>()
+            ?? throw new InvalidOperationException("PaymentProvider configuration is missing.");
+        var enabledProviderNames = paymentProviderOptions.GetEnabledProviderNames();
+        var unsupportedProviders = enabledProviderNames
+            .Where(name => !string.Equals(name, "Sandbox", StringComparison.OrdinalIgnoreCase) &&
+                           !string.Equals(name, "PayPal", StringComparison.OrdinalIgnoreCase) &&
+                           !string.Equals(name, "MoMo", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (unsupportedProviders.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Unsupported enabled payment providers: {string.Join(", ", unsupportedProviders)}. Supported values are Sandbox, PayPal, and MoMo.");
+        }
+
+        if (enabledProviderNames.Contains("Sandbox"))
         {
             if (!IsSandboxEnvironment(environment))
             {
@@ -43,12 +58,13 @@ public static class DependencyInjection
             services.AddSingleton<IPaymentProvider>(serviceProvider => serviceProvider.GetRequiredService<SandboxPaymentProvider>());
             services.AddSingleton<ISandboxPaymentProvider>(serviceProvider => serviceProvider.GetRequiredService<SandboxPaymentProvider>());
         }
-        else if (string.Equals(providerKind, "PayPal", StringComparison.OrdinalIgnoreCase))
+
+        if (enabledProviderNames.Contains("PayPal"))
         {
             services
                 .AddOptions<PayPalOptions>()
                 .Bind(configuration.GetSection(PayPalOptions.SectionName))
-                .Validate(options => options.Enabled, "PaymentProvider:PayPal:Enabled must be true when PayPal is selected.")
+                .Validate(options => options.Enabled, "PaymentProvider:PayPal:Enabled must be true when PayPal is enabled.")
                 .Validate(options => IsConfiguredSecret(options.ClientId), "PaymentProvider:PayPal:ClientId must be configured through a secret source.")
                 .Validate(options => IsConfiguredSecret(options.ClientSecret), "PaymentProvider:PayPal:ClientSecret must be configured through a secret source.")
                 .Validate(options => IsConfiguredSecret(options.WebhookId), "PaymentProvider:PayPal:WebhookId must be configured through a secret source.")
@@ -71,12 +87,39 @@ public static class DependencyInjection
             services.AddSingleton<IPaymentProvider, PayPalPaymentProvider>();
             services.AddScoped<IPayPalWebhookProcessor, PayPalWebhookProcessor>();
         }
-        else
-        {
-            throw new InvalidOperationException(
-                "PaymentProvider:Provider must select a configured provider. Supported values are Sandbox and PayPal.");
-        }
 
+        if (enabledProviderNames.Contains("MoMo"))
+        {
+            services
+                .AddOptions<MoMoOptions>()
+                .Bind(configuration.GetSection(MoMoOptions.SectionName))
+                .Validate(options => options.Enabled, "PaymentProvider:MoMo:Enabled must be true when MoMo is enabled.")
+                .Validate(options => IsConfiguredSecret(options.PartnerCode), "PaymentProvider:MoMo:PartnerCode must be configured through a secret source.")
+                .Validate(options => IsConfiguredSecret(options.AccessKey), "PaymentProvider:MoMo:AccessKey must be configured through a secret source.")
+                .Validate(options => IsConfiguredSecret(options.SecretKey), "PaymentProvider:MoMo:SecretKey must be configured through a secret source.")
+                .Validate(options => IsHttpsUrl(options.RedirectUrl), "PaymentProvider:MoMo:RedirectUrl must be an absolute HTTPS URL.")
+                .Validate(options => IsHttpsUrl(options.IpnUrl), "PaymentProvider:MoMo:IpnUrl must be an absolute HTTPS URL.")
+                .Validate(options => options.ActionExpiryMinutes is > 0 and <= 24 * 60,
+                    "PaymentProvider:MoMo:ActionExpiryMinutes must be between 1 and 1440.")
+                .ValidateOnStart();
+
+            var moMoOptions = configuration.GetSection(MoMoOptions.SectionName).Get<MoMoOptions>()
+                ?? throw new InvalidOperationException("PaymentProvider:MoMo is missing.");
+            services.AddHttpClient(MoMoApiClient.HttpClientName, client =>
+            {
+                client.BaseAddress = new Uri(moMoOptions.UseSandbox
+                    ? "https://test-payment.momo.vn/"
+                    : "https://payment.momo.vn/");
+                client.Timeout = TimeSpan.FromSeconds(15);
+            });
+            services.AddSingleton<MoMoApiClient>();
+            services.AddSingleton<IPaymentProvider, MoMoPaymentProvider>();
+            services.AddScoped<IMoMoWebhookProcessor, MoMoWebhookProcessor>();
+        }
+        if (!enabledProviderNames.Contains(paymentProviderOptions.Provider))
+        {
+            throw new InvalidOperationException("The default payment provider must be enabled.");
+        }
         services.AddSingleton<IPaymentProviderResolver, PaymentProviderResolver>();
         var orderingBaseUrl = configuration["ServiceUrls:OrderingHttp"]
                               ?? throw new InvalidOperationException("ServiceUrls:OrderingHttp is missing.");

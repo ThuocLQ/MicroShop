@@ -66,7 +66,10 @@ export function ProcurementClient() {
     }
   }, [purchaseOrderPage, supplierPage]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timerId = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timerId);
+  }, [load]);
 
   const supplierById = useMemo(() => new Map(suppliers.items.map((supplier) => [supplier.id, supplier])), [suppliers.items]);
 

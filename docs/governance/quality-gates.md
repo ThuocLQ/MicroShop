@@ -49,5 +49,6 @@ Existing CI is a baseline gate, not proof of product readiness. Manual acceptanc
 
 - Work commits use a scoped conventional message. Historical learning tags are retained; new deployable releases use annotated SemVer tags such as `v0.1.0`.
 - A release tag is created only from `main` after CI, image build, compose/Helm validation, and the applicable smoke evidence pass.
+- The manual Create MicroShop Release workflow validates the SemVer tag and that its commit is the current main HEAD, then uses the short-lived microshop-release[bot] GitHub App token to create the tag and release. The operator must provide CI and smoke-test evidence; the workflow does not deploy an environment.
 - GHCR deployment resolves a mutable environment tag to an immutable `main-<commit-sha>` image digest. The release record contains the Git tag, commit SHA, image digests, migration version, smoke evidence, and rollback tag.
 - Rollback selects the previous verified immutable image tag; database migrations are forward-only and are not rolled back automatically.

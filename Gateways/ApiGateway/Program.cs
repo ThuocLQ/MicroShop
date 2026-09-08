@@ -69,6 +69,7 @@ builder.Services.AddRateLimiter(options =>
         var clientKey = GetClientKey(context);
         var permitLimit = category switch
         {
+            "auth" => Math.Max(1, gatewayOptions.AuthPermitLimit),
             "webhook" => Math.Max(1, gatewayOptions.WebhookPermitLimit),
             "health" => Math.Max(1, gatewayOptions.HealthPermitLimit),
             _ => Math.Max(1, gatewayOptions.GeneralPermitLimit)
@@ -159,6 +160,11 @@ app.Run();
 
 static string GetRateLimitCategory(PathString path)
 {
+    if (path.StartsWithSegments("/auth"))
+    {
+        return "auth";
+    }
+
     if (path.StartsWithSegments("/webhooks"))
     {
         return "webhook";

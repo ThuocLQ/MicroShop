@@ -1,0 +1,33 @@
+:8080 {
+	encode zstd gzip
+
+	request_body {
+		max_size 1MB
+	}
+
+	header {
+		-X-Powered-By
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' https: data:; connect-src 'self'; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; upgrade-insecure-requests"
+	}
+
+	@apiPaths {
+		path /alive /health /auth /auth/* /catalog /catalog/* /cart /cart/* /orders /orders/* /payments /payments/* /webhooks /webhooks/* /inventory /inventory/* /discounts /discounts/* /order-summaries /order-summaries/*
+	}
+	handle @apiPaths {
+		reverse_proxy api-gateway:8080 {
+			header_up X-MicroShop-Client-IP {http.request.header.Cf-Connecting-Ip}
+		}
+	}
+
+	handle {
+		reverse_proxy storefront:3000 {
+			header_up Host {http.request.header.Host}
+			header_up X-Forwarded-Host {http.request.header.Host}
+		}
+	}
+}

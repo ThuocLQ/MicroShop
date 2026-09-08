@@ -1,0 +1,95 @@
+name: Create MicroShop Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer release tag, for example v0.1.0
+        required: true
+        type: string
+      releaseEvidence:
+        description: CI run and smoke-test evidence URL or summary
+        required: false
+        type: string
+      dryRun:
+        description: Verify the release bot only; do not create a tag or release
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: microshop-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Create GitHub release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release request
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! [[ "$VERSION" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "version must be a SemVer tag such as v0.1.0"
+            exit 1
+          fi
+
+          git fetch origin main --depth=1
+          if [ "$GITHUB_SHA" != "$(git rev-parse origin/main)" ]; then
+            echo "A release can only be created from the current main HEAD."
+            exit 1
+          fi
+
+      - name: Create release bot token
+        id: release-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MICROSHOP_RELEASE_APP_ID }}
+          private-key: ${{ secrets.MICROSHOP_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Verify release bot identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: gh api user --jq '"Authenticated as \(.login)"'
+
+      - name: Create annotated tag and GitHub release
+        if: inputs.dryRun == false
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+          RELEASE_EVIDENCE: ${{ inputs.releaseEvidence }}
+        run: |
+          if [ -z "$RELEASE_EVIDENCE" ]; then
+            echo "releaseEvidence is required when dryRun is false."
+            exit 1
+          fi
+
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists."
+            exit 1
+          fi
+
+          printf '## Release evidence\n\n%s\n' "$RELEASE_EVIDENCE" > /tmp/release-notes.md
+          gh release create "$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "MicroShop $VERSION" \
+            --generate-notes \
+            --notes-file /tmp/release-notes.md \
+            --latest

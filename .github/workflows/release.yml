@@ -62,12 +62,14 @@ jobs:
           private-key: ${{ secrets.MICROSHOP_RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
 
-      - name: Verify release bot identity
+      - name: Verify release bot installation access
         shell: bash
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
-        run: gh api user --jq '"Authenticated as \(.login)"'
-
+        run: |
+          repositories="$(gh api /installation/repositories --jq '.repositories[].full_name')"
+          printf '%s\n' "$repositories"
+          grep -Fxq "$GITHUB_REPOSITORY" <<< "$repositories"
       - name: Create annotated tag and GitHub release
         if: inputs.dryRun == false
         shell: bash

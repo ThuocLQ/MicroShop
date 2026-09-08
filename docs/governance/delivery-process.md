@@ -18,6 +18,7 @@ Every feature has one issue or spec section containing:
 - Acceptance criteria and test evidence required for release.
 - Observability: correlation fields, metric, audit/event requirement, runbook impact.
 - Rollback or feature-flag plan when behavior is risky.
+- For a third-party integration: provider ownership, required credentials, callback/domain prerequisites, environment scope (`mock`, `sandbox`, or `live`), and the evidence needed to claim it works. A placeholder or simulator must be labelled and must not be presented as a completed external integration.
 
 ## Decision roles
 

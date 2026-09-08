@@ -14,7 +14,8 @@ Read in this order:
 
 1. `product-system-spec.md` - turns the canonical design into customer journeys, ownership checks, and a current release boundary.
 2. `delivery-process.md` - roles, lifecycle, decision rights, and change control.
-3. `quality-gates.md` - mandatory evidence for ready, done, release, and incident follow-up.
+3. `team-and-scrum-operating-model.md` - named role aliases, current work allocation, Scrum cadence, and external-integration gates.
+4. `quality-gates.md` - mandatory evidence for ready, done, release, and incident follow-up.
 
 A feature is not accepted because a screen or endpoint exists. It is accepted only when its acceptance criteria and required evidence pass.
 ## Reusable Template

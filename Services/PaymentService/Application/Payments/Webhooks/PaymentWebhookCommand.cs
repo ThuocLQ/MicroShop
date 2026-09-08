@@ -9,4 +9,5 @@ public sealed record PaymentWebhookCommand(
     string Status,
     string? FailureReason,
     string PayloadHash,
-    string SignatureStatus) : IRequest<PaymentWebhookApplyResult>;
+    string SignatureStatus,
+    bool IsProviderAutoCapture = false) : IRequest<PaymentWebhookApplyResult>;

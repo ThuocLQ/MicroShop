@@ -5,6 +5,7 @@ namespace PaymentService.Application.Payments.Providers;
 public interface IPaymentProvider
 {
     string Name { get; }
+    IReadOnlyList<string> SupportedCurrencies { get; }
 
     Task<PaymentProviderAction> CreateActionAsync(
         PaymentProviderActionRequest request,
@@ -46,7 +47,8 @@ public sealed record PaymentProviderAction(
 public sealed record PaymentProviderDescriptor(
     string Name,
     bool IsSandbox,
-    bool RequiresRedirect);
+    bool RequiresRedirect,
+    IReadOnlyList<string> SupportedCurrencies);
 
 public sealed record PaymentProviderActionRequest(
     Guid PaymentId,

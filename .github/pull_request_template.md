@@ -1,5 +1,14 @@
 # Delivery Evidence
 
+## Team Ownership
+
+- Delivery owner (team alias):
+- Accountable owner:
+- Technical reviewer: ThuocLQ
+- QA verifier:
+- External dependency classification: `mock` | `local simulation` | `sandbox` | `code-ready` | `live-verified`
+- Blocker or decision required:
+
 ## Specification
 
 - Feature/spec link:

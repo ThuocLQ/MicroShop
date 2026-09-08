@@ -1,6 +1,9 @@
+using System.Buffers;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using MicroShop.ServiceDefaults.Diagnostics;
+using PaymentService.API;
 using PaymentService.Application.Payments.Webhooks;
 
 namespace PaymentService.API.Endpoints;
@@ -12,14 +15,23 @@ public static class WebhookEndpoints
         var group = app.MapGroup("/webhooks")
             .WithTags("Webhooks");
 
-        group.MapPost("/payment", HandlePaymentWebhookAsync);
+        group.MapPost("/payment", HandlePaymentWebhookAsync)
+            .RequireRateLimiting(PaymentWebhookRateLimiter.PolicyName);
         app.MapPost("/payments/webhooks/payment", HandlePaymentWebhookAsync)
-            .WithTags("Webhooks");
+            .WithTags("Webhooks")
+            .RequireRateLimiting(PaymentWebhookRateLimiter.PolicyName);
 
-        if (string.Equals(app.ServiceProvider.GetRequiredService<IConfiguration>()["PaymentProvider:Provider"], "PayPal", StringComparison.OrdinalIgnoreCase))
+        if (app.ServiceProvider.GetService<IPayPalWebhookProcessor>() is not null)
         {
             group.MapPost("/paypal", HandlePayPalWebhookAsync)
-                .WithSummary("Receive verified PayPal payment lifecycle events");
+                .WithSummary("Receive verified PayPal payment lifecycle events")
+                .RequireRateLimiting(PaymentWebhookRateLimiter.PolicyName);
+        }
+        if (app.ServiceProvider.GetService<IMoMoWebhookProcessor>() is not null)
+        {
+            group.MapPost("/momo", HandleMoMoWebhookAsync)
+                .WithSummary("Receive verified MoMo IPN payment events")
+                .RequireRateLimiting(PaymentWebhookRateLimiter.PolicyName);
         }
 
         return app;
@@ -31,12 +43,17 @@ public static class WebhookEndpoints
         IPaymentWebhookProcessor processor,
         CancellationToken cancellationToken)
     {
-        var rawBody = await ReadRawBodyAsync(httpRequest, cancellationToken);
+        var rawBody = await TryReadRawBodyAsync(httpRequest, options.Value.MaxBodyBytes, cancellationToken);
+        if (rawBody.Error is not null)
+        {
+            return rawBody.Error;
+        }
+
         httpRequest.Headers.TryGetValue(options.Value.SignatureHeaderName, out var signature);
         PaymentWebhookProcessingResult result;
         try
         {
-            result = await processor.ProcessAsync(rawBody, signature.ToString(), cancellationToken);
+            result = await processor.ProcessAsync(rawBody.Value!, signature.ToString(), cancellationToken);
         }
         catch (ArgumentException exception)
         {
@@ -50,24 +67,102 @@ public static class WebhookEndpoints
 
     private static async Task<IResult> HandlePayPalWebhookAsync(
         HttpRequest httpRequest,
+        IOptions<PaymentWebhookOptions> options,
         IPayPalWebhookProcessor processor,
         CancellationToken cancellationToken)
     {
-        var rawBody = await ReadRawBodyAsync(httpRequest, cancellationToken);
-        var result = await processor.ProcessAsync(httpRequest.Headers, rawBody, cancellationToken);
-        return result.Payment is null ? Results.NoContent() : Results.Ok(result.Payment);
+        var rawBody = await TryReadRawBodyAsync(httpRequest, options.Value.MaxBodyBytes, cancellationToken);
+        if (rawBody.Error is not null)
+        {
+            return rawBody.Error;
+        }
+
+        try
+        {
+            var result = await processor.ProcessAsync(httpRequest.Headers, rawBody.Value!, cancellationToken);
+            return result.Payment is null ? Results.NoContent() : Results.Ok(result.Payment);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status401Unauthorized,
+                title: "Unauthorized payment provider webhook",
+                type: "https://microshop.dev/problems/paypal-webhook-unauthorized");
+        }
+        catch (ArgumentException exception)
+        {
+            return ApiProblemResults.BadRequest(exception.Message, "PAYPAL_WEBHOOK_INVALID");
+        }
+        catch (JsonException)
+        {
+            return ApiProblemResults.BadRequest("The payment provider webhook body is invalid.", "PAYPAL_WEBHOOK_INVALID");
+        }
     }
 
-    private static async Task<string> ReadRawBodyAsync(
-        HttpRequest request,
+    private static async Task<IResult> HandleMoMoWebhookAsync(
+        HttpRequest httpRequest,
+        IOptions<PaymentWebhookOptions> options,
+        IMoMoWebhookProcessor processor,
         CancellationToken cancellationToken)
     {
-        using var reader = new StreamReader(
-            request.Body,
-            Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: false,
-            leaveOpen: false);
+        var rawBody = await TryReadRawBodyAsync(httpRequest, options.Value.MaxBodyBytes, cancellationToken);
+        if (rawBody.Error is not null)
+        {
+            return rawBody.Error;
+        }
 
-        return await reader.ReadToEndAsync(cancellationToken);
+        await processor.ProcessAsync(httpRequest.Headers, rawBody.Value!, cancellationToken);
+        return Results.NoContent();
     }
+
+    private static async Task<WebhookBodyReadResult> TryReadRawBodyAsync(
+        HttpRequest request,
+        int maxBodyBytes,
+        CancellationToken cancellationToken)
+    {
+        if (!request.HasJsonContentType())
+        {
+            return new WebhookBodyReadResult(null, Results.Problem(
+                statusCode: StatusCodes.Status415UnsupportedMediaType,
+                title: "Unsupported webhook content type",
+                type: "https://microshop.dev/problems/webhook-content-type"));
+        }
+
+        if (request.ContentLength is long declaredLength && declaredLength > maxBodyBytes)
+        {
+            return new WebhookBodyReadResult(null, Results.Problem(
+                statusCode: StatusCodes.Status413PayloadTooLarge,
+                title: "Webhook payload is too large",
+                type: "https://microshop.dev/problems/webhook-payload-too-large"));
+        }
+
+        await using var body = new MemoryStream(capacity: Math.Min(maxBodyBytes, 8 * 1024));
+        var buffer = ArrayPool<byte>.Shared.Rent(8 * 1024);
+        try
+        {
+            int read;
+            while ((read = await request.Body.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
+            {
+                if (body.Length + read > maxBodyBytes)
+                {
+                    return new WebhookBodyReadResult(null, Results.Problem(
+                        statusCode: StatusCodes.Status413PayloadTooLarge,
+                        title: "Webhook payload is too large",
+                        type: "https://microshop.dev/problems/webhook-payload-too-large"));
+                }
+
+                await body.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
+
+            return new WebhookBodyReadResult(
+                Encoding.UTF8.GetString(body.GetBuffer(), 0, checked((int)body.Length)),
+                null);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private sealed record WebhookBodyReadResult(string? Value, IResult? Error);
 }

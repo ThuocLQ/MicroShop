@@ -45,6 +45,11 @@ public sealed class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand,
             throw new PaymentOrderNotAccessibleException(request.OrderId);
         }
 
+        PaymentProviderPolicy.EnsureActionIsSupported(
+            paymentProvider.Name,
+            order.TotalAmount,
+            order.Currency,
+            paymentProvider.SupportedCurrencies);
         var requestHash = ComputeIntentHash(order.OrderId, order.CustomerId, order.TotalAmount, order.Currency, paymentProvider.Name);
         var replay = await _repository.GetByCustomerAndActionIdempotencyKeyAsync(
             request.CustomerId,

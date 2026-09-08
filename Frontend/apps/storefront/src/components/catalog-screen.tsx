@@ -1,10 +1,9 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Box, ClipboardList, LoaderCircle, LogIn, RefreshCw, Search, ShoppingBag, Sparkles, UserRound } from "lucide-react";
+import { AlertTriangle, ArrowRight, Box, LoaderCircle, LogIn, RefreshCw, Search, ShoppingBag, Sparkles, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthDialog } from "@/components/auth-dialog";
-import { EmailVerificationStatus } from "@/components/email-verification-status";
 import { type AddressLoadState } from "@/components/address-selection";
 import { BasketPanel } from "@/components/basket-panel";
 import { OrderPanel } from "@/components/order-panel";
@@ -55,14 +54,12 @@ export function CatalogScreen() {
   const [ordersMessage, setOrdersMessage] = useState<string | null>(null);
   const [isOrdersOpen, setIsOrdersOpen] = useState(false);
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
-  const [startingPaymentOrderId, setStartingPaymentOrderId] = useState<string | null>(null);
   const [completingSandboxPaymentId, setCompletingSandboxPaymentId] = useState<string | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(null);
   const catalogSectionRef = useRef<HTMLElement>(null);
   const checkoutKeys = useRef(new Map<string, string>());
-  const paymentActionKeys = useRef(new Map<string, string>());
   const addressCreateKeys = useRef(new Map<string, string>());
 
   const recoverExpiredSession = useCallback(() => {
@@ -208,7 +205,6 @@ export function CatalogScreen() {
   const categories = useMemo(() => Array.from(new Set(products.map((product) => product.category?.trim()).filter((category): category is string => Boolean(category)))).sort(), [products]);
   const visibleProducts = useMemo(() => selectedCategory ? products.filter((product) => product.category === selectedCategory) : products, [products, selectedCategory]);
   const featuredProduct = useMemo(() => visibleProducts.find((product) => product.stockQuantity > 0) ?? visibleProducts[0] ?? null, [visibleProducts]);
-  const editorialProducts = useMemo(() => visibleProducts.filter((product) => product.id !== featuredProduct?.id).slice(0, 3), [featuredProduct?.id, visibleProducts]);
   const searchTerm = query.trim();
   const catalogSummary = catalog.status === "loading" && searchTerm
     ? `Searching catalog for "${searchTerm}"...`
@@ -503,37 +499,6 @@ export function CatalogScreen() {
     }
   }
 
-  async function startPayment(orderId: string) {
-    setStartingPaymentOrderId(orderId);
-    setPaymentMessage(null);
-    try {
-      const idempotencyKey = paymentActionKeys.current.get(orderId) ?? crypto.randomUUID();
-      paymentActionKeys.current.set(orderId, idempotencyKey);
-      const response = await fetch("/api/payments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-        body: JSON.stringify({ orderId }),
-      });
-      const payload: unknown = await response.json().catch(() => null);
-      if (response.status === 401) {
-        recoverExpiredSession();
-        return;
-      }
-      if (!response.ok || !isPaymentAction(payload)) throw new Error(messageOf(payload) ?? "Payment could not be initiated.");
-      setPaymentsByOrder((current) => ({ ...current, [orderId]: payload.payment }));
-      if (payload.action.checkoutUrl) {
-        window.location.assign(payload.action.checkoutUrl);
-        return;
-      }
-      setPaymentMessage("Payment action #" + payload.payment.id.slice(0, 8).toUpperCase() + " is " + labelPaymentStatus(payload.payment.status) + " and expires " + new Date(payload.action.expiresAtUtc).toLocaleTimeString() + ". Your order remains awaiting confirmed payment; refresh after the provider callback is processed.");
-      await loadOrders();
-    } catch (error) {
-      setPaymentMessage(error instanceof Error ? error.message : "Payment could not be initiated.");
-    } finally {
-      setStartingPaymentOrderId(null);
-    }
-  }
-
   async function completeSandboxPayment(paymentId: string, orderId: string) {
     setCompletingSandboxPaymentId(paymentId);
     setPaymentMessage(null);
@@ -613,14 +578,6 @@ export function CatalogScreen() {
       setAddressMessage(null);
       void loadAddresses().catch((error: unknown) => setAddressMessage(error instanceof Error ? error.message : "Your saved addresses could not be loaded."));
     }
-  }
-
-  function openAccount() {
-    if (session.status !== "authenticated") {
-      openAuth();
-      return;
-    }
-    openOrders();
   }
 
   function signedIn(user: CurrentUser) {
@@ -704,7 +661,7 @@ export function CatalogScreen() {
       <ProductDetailDialog busyProductId={busyProductId} onAdd={addToBasket} onClose={() => setSelectedProduct(null)} product={selectedProduct} />
       <AuthDialog notice={authNotice} onClose={() => { setIsAuthOpen(false); setAuthNotice(null); }} onSignedIn={signedIn} open={isAuthOpen} />
       {isBasketOpen ? <BasketPanel addressLoadState={addressLoadState} addressMessage={addressMessage} addresses={addresses} basket={basket} busyAddressId={busyAddressId} busyProductId={busyProductId} confirmation={orderConfirmation} isCheckingOut={isCheckingOut} isReviewingCheckout={isReviewingCheckout} loadState={basketLoadState} message={basketMessage} onChangeQuantity={changeQuantity} onCheckout={checkout} onClose={() => setIsBasketOpen(false)} onCreateAddress={createAddress} onDeleteAddress={deleteAddress} onInvalidateQuote={() => setCheckoutQuote(null)} onRefresh={retryBasket} onRemove={removeItem} onRetry={retryBasket} onRetryAddresses={() => { setAddressMessage(null); void loadAddresses().catch((error: unknown) => setAddressMessage(error instanceof Error ? error.message : "Your saved addresses could not be loaded.")); }} onReview={reviewCheckout} onSelectAddress={setSelectedAddressId} onSetDefaultAddress={setDefaultAddress} onUpdateAddress={updateAddress} onViewOrders={() => { setIsBasketOpen(false); openOrders(); }} quote={checkoutQuote} selectedAddressId={selectedAddressId} /> : null}
-      {isOrdersOpen ? <OrderPanel cancellingOrderId={cancellingOrderId} completingSandboxPaymentId={completingSandboxPaymentId} isLoading={isOrdersLoading} message={ordersMessage} onCancelOrder={cancelOrder} onClose={() => setIsOrdersOpen(false)} onCompleteSandboxPayment={completeSandboxPayment} onRetry={() => void loadOrders()} onStartPayment={startPayment} orders={orders} paymentsByOrder={paymentsByOrder} paymentMessage={paymentMessage} recentOrder={recentOrder} startingPaymentOrderId={startingPaymentOrderId} /> : null}
+      {isOrdersOpen ? <OrderPanel cancellingOrderId={cancellingOrderId} completingSandboxPaymentId={completingSandboxPaymentId} isLoading={isOrdersLoading} message={ordersMessage} onCancelOrder={cancelOrder} onClose={() => setIsOrdersOpen(false)} onCompleteSandboxPayment={completeSandboxPayment} onRetry={() => void loadOrders()} orders={orders} paymentsByOrder={paymentsByOrder} paymentMessage={paymentMessage} recentOrder={recentOrder} /> : null}
     </main>
   );
 }
@@ -832,17 +789,4 @@ function isSandboxPaymentCompletion(value: unknown): value is { payment: Payment
   return typeof value === "object" && value !== null && isPaymentSummary((value as Record<string, unknown>).payment);
 }
 
-function isPaymentAction(value: unknown): value is { payment: PaymentSummary; action: { expiresAtUtc: string; checkoutUrl: string | null } } {
-  if (typeof value !== "object" || value === null) return false;
-  const payload = value as Record<string, unknown>;
-  if (typeof payload.payment !== "object" || payload.payment === null || typeof payload.action !== "object" || payload.action === null) return false;
-  const payment = payload.payment as Record<string, unknown>;
-  const action = payload.action as Record<string, unknown>;
-  return isPaymentSummary(payment)
-    && typeof action.expiresAtUtc === "string"
-    && (typeof action.checkoutUrl === "string" || action.checkoutUrl === null);
-}
-
 function isOrders(value: unknown): value is OrderSummary[] { return Array.isArray(value) && value.every(isOrderSummary); }
-
-function labelPaymentStatus(status: string) { return status.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(); }

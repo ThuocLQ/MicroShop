@@ -239,6 +239,7 @@ try {
         GatewayBaseUrl = $GatewayBaseUrl
         StorefrontPublicOrigin = $storefrontTunnel.Url
         RecreateFrontends = $true
+        RecreatePaymentService = $true
         SkipSmoke = $true
         SkipSeed = $true
     }

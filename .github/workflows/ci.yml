@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  packages: read
 
 concurrency:
   group: microshop-ci-${{ github.workflow }}-${{ github.ref }}
@@ -255,6 +255,9 @@ jobs:
     needs:
       - build-test
       - runtime-validation
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -328,6 +331,9 @@ jobs:
       - supplier-build-test
       - frontend-build-test
       - runtime-validation
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:

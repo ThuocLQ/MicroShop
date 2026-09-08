@@ -13,11 +13,19 @@ public sealed class PaymentProviderResolver : IPaymentProviderResolver
         IOptions<PaymentProviderOptions> options)
     {
         _options = options.Value;
-        _providers = providers.ToDictionary(provider => provider.Name, StringComparer.OrdinalIgnoreCase);
+        var enabledProviderNames = _options.GetEnabledProviderNames();
+        _providers = providers
+            .Where(provider => enabledProviderNames.Contains(provider.Name))
+            .ToDictionary(provider => provider.Name, StringComparer.OrdinalIgnoreCase);
 
         if (_providers.Count == 0)
         {
-            throw new InvalidOperationException("At least one payment provider must be registered.");
+            throw new InvalidOperationException("At least one enabled payment provider must be registered.");
+        }
+
+        if (!_providers.ContainsKey(_options.Provider))
+        {
+            throw new InvalidOperationException("The configured default payment provider is not registered and enabled.");
         }
     }
 
@@ -37,10 +45,13 @@ public sealed class PaymentProviderResolver : IPaymentProviderResolver
 
     public IReadOnlyList<PaymentProviderDescriptor> GetAvailableProviders() =>
         _providers.Values
-            .OrderBy(provider => provider.Name, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(provider => string.Equals(provider.Name, _options.Provider, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(provider => PaymentProviderPolicy.GetDisplayOrder(provider.Name))
+            .ThenBy(provider => provider.Name, StringComparer.OrdinalIgnoreCase)
             .Select(provider => new PaymentProviderDescriptor(
                 provider.Name,
                 string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase),
-                !string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase)))
+                !string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase),
+                provider.SupportedCurrencies))
             .ToList();
 }

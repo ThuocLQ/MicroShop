@@ -13,33 +13,55 @@ function Require-Path {
     }
 }
 
+function Get-RepositoryFiles {
+    param(
+        [string]$Filter,
+        [switch]$ExcludeHistoricalMaterial
+    )
+
+    $excludedDirectories = '(?:\.git|bin|obj|node_modules)'
+    if ($ExcludeHistoricalMaterial) {
+        $excludedDirectories = '(?:\.git|bin|obj|node_modules|GiaoAn)'
+    }
+
+    Get-ChildItem -Path $root -File -Recurse -Filter $Filter |
+        Where-Object { $_.FullName -notmatch "[\\/]$excludedDirectories[\\/]" }
+}
+
+function Find-RepositoryText {
+    param(
+        [string]$Pattern,
+        [string]$Filter = '*',
+        [switch]$ExcludeHistoricalMaterial
+    )
+
+    $files = @(Get-RepositoryFiles -Filter $Filter -ExcludeHistoricalMaterial:$ExcludeHistoricalMaterial)
+    if ($files.Count -eq 0) {
+        return @()
+    }
+
+    @(Select-String -Path $files.FullName -Pattern $Pattern | ForEach-Object {
+        "$($_.Path):$($_.LineNumber):$($_.Line.Trim())"
+    })
+}
+
 Require-Path 'Gateways/ApiGateway/ApiGateway.csproj'
 Require-Path 'Workers/NotificationWorker/NotificationWorker.csproj'
 Require-Path 'Workers/ProjectionWorker/ProjectionWorker.csproj'
 Require-Path 'Directory.Build.props'
 Require-Path 'Directory.Packages.props'
 
-$legacyReferences = rg -n 'Services[\\/]ApiGateway|Services[\\/]NotificationWorker' `
-    -g '!GiaoAn/**' `
-    -g '!**/bin/**' `
-    -g '!**/obj/**' `
-    -g '!**/node_modules/**' .
+$legacyReferences = Find-RepositoryText `
+    -Pattern 'Services[\\/]ApiGateway|Services[\\/]NotificationWorker' `
+    -ExcludeHistoricalMaterial
 
-if ($LASTEXITCODE -eq 0) {
+if ($legacyReferences.Count -gt 0) {
     throw "Legacy deployable-unit paths are still referenced outside historical learning material:`n$legacyReferences"
 }
 
-if ($LASTEXITCODE -ne 1) {
-    throw "Repository path scan failed with exit code $LASTEXITCODE."
-}
-
-$duplicatedProjectDefaults = rg -n '<Nullable>enable</Nullable>|<ImplicitUsings>enable</ImplicitUsings>' -g '*.csproj'
-if ($LASTEXITCODE -eq 0) {
+$duplicatedProjectDefaults = Find-RepositoryText -Pattern '<Nullable>enable</Nullable>|<ImplicitUsings>enable</ImplicitUsings>' -Filter '*.csproj'
+if ($duplicatedProjectDefaults.Count -gt 0) {
     throw "Compiler defaults belong in Directory.Build.props, not individual projects:`n$duplicatedProjectDefaults"
-}
-
-if ($LASTEXITCODE -ne 1) {
-    throw "Project-default scan failed with exit code $LASTEXITCODE."
 }
 
 $trackedDatabaseArtifacts = git ls-files -- 'Services/**/*.db' 'Services/**/*.sqlite' 'Workers/**/*.db' 'Workers/**/*.sqlite'
@@ -53,8 +75,8 @@ $centralPackageIds = @($centralPackages.Project.ItemGroup.PackageVersion | ForEa
 $missingCentralVersions = [System.Collections.Generic.List[string]]::new()
 $inlineVersions = [System.Collections.Generic.List[string]]::new()
 
-rg --files -g '*.csproj' | ForEach-Object {
-    [xml]$project = Get-Content $_ -Raw
+Get-RepositoryFiles -Filter '*.csproj' | ForEach-Object {
+    [xml]$project = Get-Content $_.FullName -Raw
     @($project.Project.ItemGroup.PackageReference) | Where-Object { $_ } | ForEach-Object {
         if ($_.Version) {
             $inlineVersions.Add("$_ -> $($_.Include)")

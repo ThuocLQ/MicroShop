@@ -149,6 +149,26 @@ public sealed class MoMoWebhookProcessorTests
             return Task.FromResult(new PaymentWebhookApplyResult(payment, duplicate, providerEventId, status));
         }
 
+        public Task<PaymentWebhookApplyResult> ApplyVerifiedAutoCaptureAsync(
+            string providerEventId,
+            Guid paymentId,
+            string providerTransactionId,
+            string? failureReason,
+            string payloadHash,
+            string signatureStatus,
+            DateTime receivedAtUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var duplicate = !_eventIds.Add(providerEventId);
+            if (!duplicate)
+            {
+                payment.MarkCaptured(providerTransactionId, receivedAtUtc, allowProviderAutoCapture: true);
+                AppliedStatuses.Add(PaymentStatus.Captured);
+            }
+
+            LastSignatureStatus = signatureStatus;
+            return Task.FromResult(new PaymentWebhookApplyResult(payment, duplicate, providerEventId, PaymentStatus.Captured));
+        }
         public Task RecordRejectedAsync(string providerEventId, Guid paymentId, string providerTransactionId, string eventType, string payloadHash, string signatureStatus, string error, DateTime receivedAtUtc, CancellationToken cancellationToken = default)
         {
             RejectedCount++;

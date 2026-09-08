@@ -144,7 +144,7 @@ public sealed class Payment
         CaptureRequestedAtUtc = requestedAtUtc;
     }
 
-    public void MarkCaptured(string providerTransactionId, DateTime capturedAtUtc)
+    public void MarkCaptured(string providerTransactionId, DateTime capturedAtUtc, bool allowProviderAutoCapture = false)
     {
         if (Status is PaymentStatus.Captured or PaymentStatus.RefundPending or PaymentStatus.Refunded)
         {
@@ -161,9 +161,10 @@ public sealed class Payment
             return;
         }
 
-        // A provider may auto-capture immediately after authorization, so its verified
-        // lifecycle event is sufficient evidence even without a local capture request.
-        if (Status is not (PaymentStatus.Authorized or PaymentStatus.CapturePending or PaymentStatus.VoidPending))
+        // The standard path requires a local capture request. A verified provider
+        // auto-capture is the sole exception and is explicitly marked by its adapter.
+        if (Status is not (PaymentStatus.CapturePending or PaymentStatus.VoidPending) &&
+            !(allowProviderAutoCapture && Status == PaymentStatus.Authorized))
         {
             throw new InvalidOperationException($"Payment in status '{Status}' cannot be captured.");
         }

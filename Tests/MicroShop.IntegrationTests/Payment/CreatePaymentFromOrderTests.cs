@@ -80,14 +80,37 @@ public sealed class CreatePaymentFromOrderTests
         Assert.Equal(0, repository.CreateCalls);
     }
 
+    [Fact]
+    public async Task CreatePayment_WithUnsupportedProviderCurrency_RejectsBeforeCreatingAnAction()
+    {
+        var orderId = Guid.NewGuid();
+        var customerId = Guid.NewGuid();
+        var repository = new StubPaymentRepository();
+        var provider = new StubPaymentProvider("PayPal", ["USD"]);
+        var handler = new CreatePaymentHandler(repository,
+            new StubOrderPaymentClient(new OrderPaymentSnapshot(orderId, customerId, 125_000m, "VND", "PendingPayment")),
+            provider);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new CreatePaymentCommand(orderId, customerId, "payment-action-paypal-vnd", "PayPal"),
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal(0, provider.CreateActionCalls);
+        Assert.Equal(0, repository.CreateCalls);
+    }
     private sealed class StubOrderPaymentClient(OrderPaymentSnapshot? order) : IOrderPaymentClient
     {
         public Task<OrderPaymentSnapshot?> GetOrderAsync(Guid orderId, CancellationToken cancellationToken = default) => Task.FromResult(order);
     }
 
-    private sealed class StubPaymentProvider : IPaymentProvider, IPaymentProviderResolver
+    private sealed class StubPaymentProvider(
+        string name = "Sandbox",
+        IReadOnlyList<string>? supportedCurrencies = null) : IPaymentProvider, IPaymentProviderResolver
     {
-        public string Name => "Sandbox";
+        public int CreateActionCalls { get; private set; }
+        public string Name => name;
+        public IReadOnlyList<string> SupportedCurrencies => supportedCurrencies ?? [PaymentProviderPolicy.AnyCurrency];
+
         public IPaymentProvider Resolve(string? providerName)
         {
             if (string.IsNullOrWhiteSpace(providerName) || string.Equals(providerName, Name, StringComparison.OrdinalIgnoreCase)) return this;
@@ -95,14 +118,18 @@ public sealed class CreatePaymentFromOrderTests
         }
 
         public IReadOnlyList<PaymentProviderDescriptor> GetAvailableProviders() =>
-            [new PaymentProviderDescriptor(Name, true, false, PaymentProviderPolicy.GetSupportedCurrencies(Name))];
-        public Task<PaymentProviderAction> CreateActionAsync(PaymentProviderActionRequest request, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new PaymentProviderAction(Name, $"sandbox-session-{request.PaymentId:N}", null, DateTime.UtcNow.AddMinutes(30)));
+            [new PaymentProviderDescriptor(Name, string.Equals(Name, "Sandbox", StringComparison.OrdinalIgnoreCase), !string.Equals(Name, "Sandbox", StringComparison.OrdinalIgnoreCase), SupportedCurrencies)];
+
+        public Task<PaymentProviderAction> CreateActionAsync(PaymentProviderActionRequest request, CancellationToken cancellationToken = default)
+        {
+            CreateActionCalls++;
+            return Task.FromResult(new PaymentProviderAction(Name, $"provider-session-{request.PaymentId:N}", null, DateTime.UtcNow.AddMinutes(30)));
+        }
+
         public Task<PaymentProviderWebhook?> RequestCaptureAsync(DomainPayment payment, CancellationToken cancellationToken = default) => Task.FromResult<PaymentProviderWebhook?>(null);
         public Task<PaymentProviderWebhook?> RequestVoidAsync(DomainPayment payment, CancellationToken cancellationToken = default) => Task.FromResult<PaymentProviderWebhook?>(null);
         public Task<PaymentProviderWebhook?> RequestRefundAsync(DomainPayment payment, CancellationToken cancellationToken = default) => Task.FromResult<PaymentProviderWebhook?>(null);
     }
-
     private sealed class StubPaymentRepository : IPaymentRepository
     {
         private DomainPayment? _payment;

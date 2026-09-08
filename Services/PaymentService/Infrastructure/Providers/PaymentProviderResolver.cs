@@ -45,11 +45,13 @@ public sealed class PaymentProviderResolver : IPaymentProviderResolver
 
     public IReadOnlyList<PaymentProviderDescriptor> GetAvailableProviders() =>
         _providers.Values
-            .OrderBy(provider => provider.Name, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(provider => string.Equals(provider.Name, _options.Provider, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(provider => PaymentProviderPolicy.GetDisplayOrder(provider.Name))
+            .ThenBy(provider => provider.Name, StringComparer.OrdinalIgnoreCase)
             .Select(provider => new PaymentProviderDescriptor(
                 provider.Name,
                 string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase),
                 !string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase),
-                PaymentProviderPolicy.GetSupportedCurrencies(provider.Name)))
+                provider.SupportedCurrencies))
             .ToList();
 }

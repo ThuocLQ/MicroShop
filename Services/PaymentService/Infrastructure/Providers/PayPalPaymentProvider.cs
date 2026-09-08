@@ -18,11 +18,14 @@ public sealed class PayPalPaymentProvider : IPaymentProvider
     }
 
     public string Name => "PayPal";
+    public IReadOnlyList<string> SupportedCurrencies => PaymentProviderPolicy.GetConfiguredPayPalCurrencies(_options.SupportedCurrencies);
 
     public async Task<PaymentProviderAction> CreateActionAsync(
         PaymentProviderActionRequest request,
         CancellationToken cancellationToken = default)
     {
+        PaymentProviderPolicy.EnsureActionIsSupported(Name, request.Amount, request.Currency, SupportedCurrencies);
+
         using var createOrder = new HttpRequestMessage(HttpMethod.Post, "v2/checkout/orders")
         {
             Content = JsonContent.Create(new

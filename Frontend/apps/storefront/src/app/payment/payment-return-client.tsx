@@ -1,12 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CheckCircle2, CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
 import type { PaymentSummary } from "@/lib/storefront/types";
 import { problemMessage } from "@/lib/http/problem-details";
-
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 type PaymentReturnClientProps = { cancelled: boolean };
 
@@ -16,7 +14,7 @@ export function PaymentReturnClient({ cancelled }: PaymentReturnClientProps) {
   const [loading, setLoading] = useState(true);
   const paymentId = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("paymentId");
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     if (!paymentId) {
       setMessage("The payment reference is missing. Return to your orders and try again.");
       setLoading(false);
@@ -27,7 +25,10 @@ export function PaymentReturnClient({ cancelled }: PaymentReturnClientProps) {
     try {
       const response = await fetch(`/api/payments/${encodeURIComponent(paymentId)}`, { cache: "no-store" });
       const payload: unknown = await response.json().catch(() => null);
-      if (!response.ok || !isPayment(payload)) throw new Error(problemMessage(payload) ?? "Payment status could not be loaded.");
+      if (!response.ok || !isPayment(payload)) {
+        throw new Error(problemMessage(payload) ?? "Payment status could not be loaded.");
+      }
+
       setPayment(payload);
       setMessage(null);
     } catch (error) {
@@ -35,19 +36,28 @@ export function PaymentReturnClient({ cancelled }: PaymentReturnClientProps) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [paymentId]);
 
-  useEffect(() => { const task = window.setTimeout(() => { void refresh(); }, 0); return () => window.clearTimeout(task); }, []);
+  const paymentStatus = payment?.status;
+
   useEffect(() => {
-    if (!payment || isFinal(payment.status)) return;
+    const task = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(task);
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!paymentStatus || isFinal(paymentStatus)) {
+      return;
+    }
+
     const timer = window.setInterval(() => void refresh(), 5000);
     return () => window.clearInterval(timer);
-  }, [payment?.status, paymentId]);
+  }, [paymentStatus, refresh]);
 
-  const title = cancelled ? "Payment was not completed" : payment && isFinal(payment.status) ? "Payment status updated" : "Confirming your payment";
+  const title = cancelled ? "Payment was not completed" : paymentStatus && isFinal(paymentStatus) ? "Payment status updated" : "Confirming your payment";
   const description = cancelled
     ? "No payment has been confirmed. You can return to your orders and choose another available payment action while the order is still awaiting payment."
-    : payment && isFinal(payment.status)
+    : paymentStatus && isFinal(paymentStatus)
       ? "The provider response has been recorded. Your order may continue processing asynchronously."
       : "We are waiting for the provider webhook. Do not submit payment again while this status is refreshing.";
 

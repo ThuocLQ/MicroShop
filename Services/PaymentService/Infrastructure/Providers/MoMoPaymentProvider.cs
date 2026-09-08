@@ -20,6 +20,7 @@ public sealed class MoMoPaymentProvider : IPaymentProvider
     }
 
     public string Name => "MoMo";
+    public IReadOnlyList<string> SupportedCurrencies => ["VND"];
 
     public async Task<PaymentProviderAction> CreateActionAsync(
         PaymentProviderActionRequest request,

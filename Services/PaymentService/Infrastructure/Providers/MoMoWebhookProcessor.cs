@@ -80,7 +80,8 @@ public sealed class MoMoWebhookProcessor : IMoMoWebhookProcessor
             payload.ResultCode == 0 ? "CAPTURED" : "FAILED",
             payload.ResultCode == 0 ? null : payload.Message,
             payloadHash,
-            "Verified"), cancellationToken);
+            "Verified",
+            IsProviderAutoCapture: payload.ResultCode == 0), cancellationToken);
 
         return new PaymentWebhookProcessingResult(
             result.Payment is null ? null : PaymentMapper.ToDto(result.Payment),

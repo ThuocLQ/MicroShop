@@ -5,6 +5,7 @@ namespace PaymentService.Application.Payments.Providers;
 public interface IPaymentProvider
 {
     string Name { get; }
+    IReadOnlyList<string> SupportedCurrencies { get; }
 
     Task<PaymentProviderAction> CreateActionAsync(
         PaymentProviderActionRequest request,

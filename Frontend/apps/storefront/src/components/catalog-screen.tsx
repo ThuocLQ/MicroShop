@@ -9,6 +9,7 @@ import { BasketPanel } from "@/components/basket-panel";
 import { OrderPanel } from "@/components/order-panel";
 import { ProductDetailDialog } from "@/components/product-detail-dialog";
 import { ProductImage } from "@/components/product-image";
+import { StorefrontFooter } from "@/components/storefront-shell";
 import { type CatalogProduct, getCatalogProducts } from "@/lib/gateway/catalog";
 import { problemMessage } from "@/lib/http/problem-details";
 import type { AddressInput, Basket, CheckoutQuote, CurrentUser, CustomerAddress, OrderSummary, PaymentSummary } from "@/lib/storefront/types";
@@ -611,7 +612,7 @@ export function CatalogScreen() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--background)]">
+    <main className="flex min-h-screen flex-col bg-[var(--background)]">
       <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-white/95 backdrop-blur">
         <div className="mx-auto flex min-h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <button aria-label="Browse catalog" className="flex shrink-0 items-center gap-2 text-left" onClick={openCatalog} type="button">
@@ -649,7 +650,7 @@ export function CatalogScreen() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Browse by intent</p><h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Find what fits your day.</h2></div><Link className="text-sm font-semibold text-[var(--accent)] hover:underline" href="/products">All products</Link></div><div className="mt-6 flex gap-2 overflow-x-auto pb-1" role="list">{categories.map((category) => <button aria-pressed={selectedCategory === category} className={`store-category-chip ${selectedCategory === category ? "is-active" : ""}`} key={category} onClick={() => setSelectedCategory((current) => current === category ? null : category)} type="button">{category}</button>)}{selectedCategory ? <button className="store-category-chip" onClick={() => setSelectedCategory(null)} type="button">Clear filter</button> : null}</div></div>
       </section>
 
-      <section className="bg-[var(--background)] py-14 sm:py-18">
+      <section className="flex-1 bg-[var(--background)] py-14 sm:py-18">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"><div className="flex flex-col gap-5 border-b border-[var(--line)] pb-6 lg:flex-row lg:items-end lg:justify-between"><div className="max-w-2xl"><p className="eyebrow">Current catalog</p><h2 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Thoughtful tools, ready now.</h2><p className="mt-3 text-sm leading-6 text-[var(--muted)] sm:text-base">Browse real catalog pricing and availability. Sign in only when you are ready to save an item to your cart.</p></div><label className="store-search"><span className="sr-only">Search products</span><Search aria-hidden="true" size={18} /><input onChange={(event) => setQuery(event.target.value)} placeholder="Search the catalog" type="search" value={query} /></label></div>
           <div aria-live="polite" className="mt-5 flex min-h-5 items-center justify-between gap-4 text-sm text-[var(--muted)]"><p>{selectedCategory ? `${selectedCategory} · ${catalogSummary}` : catalogSummary}</p>{catalog.status === "loading" && products.length > 0 ? <span className="inline-flex items-center gap-2"><LoaderCircle aria-hidden="true" className="animate-spin" size={15} />Updating catalog</span> : null}</div>
           {catalog.status === "unavailable" ? <CatalogUnavailable onRetry={reloadCatalog} /> : null}
@@ -658,6 +659,7 @@ export function CatalogScreen() {
         </div>
       </section>
 
+      <StorefrontFooter />
       <ProductDetailDialog busyProductId={busyProductId} onAdd={addToBasket} onClose={() => setSelectedProduct(null)} product={selectedProduct} />
       <AuthDialog notice={authNotice} onClose={() => { setIsAuthOpen(false); setAuthNotice(null); }} onSignedIn={signedIn} open={isAuthOpen} />
       {isBasketOpen ? <BasketPanel addressLoadState={addressLoadState} addressMessage={addressMessage} addresses={addresses} basket={basket} busyAddressId={busyAddressId} busyProductId={busyProductId} confirmation={orderConfirmation} isCheckingOut={isCheckingOut} isReviewingCheckout={isReviewingCheckout} loadState={basketLoadState} message={basketMessage} onChangeQuantity={changeQuantity} onCheckout={checkout} onClose={() => setIsBasketOpen(false)} onCreateAddress={createAddress} onDeleteAddress={deleteAddress} onInvalidateQuote={() => setCheckoutQuote(null)} onRefresh={retryBasket} onRemove={removeItem} onRetry={retryBasket} onRetryAddresses={() => { setAddressMessage(null); void loadAddresses().catch((error: unknown) => setAddressMessage(error instanceof Error ? error.message : "Your saved addresses could not be loaded.")); }} onReview={reviewCheckout} onSelectAddress={setSelectedAddressId} onSetDefaultAddress={setDefaultAddress} onUpdateAddress={updateAddress} onViewOrders={() => { setIsBasketOpen(false); openOrders(); }} quote={checkoutQuote} selectedAddressId={selectedAddressId} /> : null}

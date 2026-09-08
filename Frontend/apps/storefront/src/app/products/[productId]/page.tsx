@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, Box, ShoppingBag } from "lucide-react";
+import { ArrowLeft, ArrowRight, Box } from "lucide-react";
 import { ProductPurchaseActions } from "@/components/product-purchase-actions";
+import { StorefrontFooter, StorefrontHeader } from "@/components/storefront-shell";
 import { getCatalogProduct } from "@/lib/gateway/catalog-server";
 import type { CatalogProduct } from "@/lib/gateway/catalog";
 import { productImageSource } from "@/lib/storefront/product-media";
@@ -12,9 +13,10 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const { productId } = await params;
   const result = await getCatalogProduct(productId);
 
-  return <main className="min-h-screen bg-[var(--background)]">
-    <header className="border-b border-[var(--line)] bg-white/95 backdrop-blur"><div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8"><Link className="flex items-center gap-2 text-sm font-semibold tracking-tight" href="/"><span className="grid size-9 place-items-center rounded-sm bg-[var(--foreground)] text-white"><Box aria-hidden="true" size={18} /></span>MicroShop</Link><nav className="flex items-center gap-1"><Link className="store-nav-link" href="/products">Shop all</Link><Link className="store-icon-button" href="/checkout"><ShoppingBag aria-hidden="true" size={18} /><span className="sr-only">Checkout</span></Link></nav></div></header>
-    <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"><Link className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--accent)] hover:underline" href="/products"><ArrowLeft aria-hidden="true" size={16} />Back to catalog</Link>{result.status === "not-found" ? notFound() : result.status === "unavailable" ? <Unavailable /> : <ProductDetail product={result.product} />}</section>
+  return <main className="flex min-h-screen flex-col bg-[var(--background)]">
+    <StorefrontHeader />
+    <section className="mx-auto max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:px-8"><Link className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--accent)] hover:underline" href="/products"><ArrowLeft aria-hidden="true" size={16} />Back to catalog</Link>{result.status === "not-found" ? notFound() : result.status === "unavailable" ? <Unavailable /> : <ProductDetail product={result.product} />}</section>
+      <StorefrontFooter />
   </main>;
 }
 

@@ -23,7 +23,10 @@ export function StorefrontHeader() {
     }
   }, []);
 
-  useEffect(() => { void loadSession(); }, [loadSession]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadSession(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadSession]);
 
   async function signOut() {
     await fetch("/api/session", { method: "DELETE", headers: { Accept: "application/json" } }).catch(() => null);

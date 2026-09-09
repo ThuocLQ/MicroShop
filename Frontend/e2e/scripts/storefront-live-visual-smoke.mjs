@@ -7,7 +7,7 @@ const browser = await chromium.launch({ headless: true });
 try {
   const desktop = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   await desktop.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await desktop.waitForTimeout(500);
+  await desktop.waitForFunction(() => document.querySelectorAll("[data-testid=product-card]").length > 0, undefined, { timeout: 15_000 });
   const cardLocator = desktop.locator("[data-testid=product-card]");
   const cardCount = await cardLocator.count();
   for (let index = 0; index < cardCount; index++) {

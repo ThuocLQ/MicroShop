@@ -18,7 +18,10 @@ export function useCustomerRealtime(
 ) {
   const callback = useRef(onUpdate);
   const seenEventIds = useRef(new Set<string>());
-  callback.current = onUpdate;
+  useEffect(() => {
+    callback.current = onUpdate;
+  }, [onUpdate]);
+
 
   useEffect(() => {
     if (!enabled) return;

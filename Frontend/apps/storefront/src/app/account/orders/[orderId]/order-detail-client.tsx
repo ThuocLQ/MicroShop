@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, CreditCard, LoaderCircle, MapPin, PackageCheck, RefreshCw, XCircle } from "lucide-react";
 import { problemMessage } from "@/lib/http/problem-details";
 import type { PaymentSummary } from "@/lib/storefront/types";
+import { useCustomerRealtime } from "@/lib/realtime/use-customer-realtime";
 
 type Order = { id: string; createdAtUtc: string; status: string; totalAmount: number; currency: string; subtotalAmount: number; discountCode: string | null; discountAmount: number; items: { id: string; productId: string; productName: string; unitPrice: number; quantity: number; totalPrice: number }[]; shippingAddress: { recipientName: string; line1: string; line2: string | null; city: string; countryCode: string; postalCode: string | null } | null };
 type Shipment = { shipment: { id: string; status: string; carrier: string | null; trackingNumber: string | null }; history: { id: string; currentStatus: string; reason: string; occurredAtUtc: string }[] };
@@ -13,9 +14,16 @@ type State = "loading" | "ready" | "not-found" | "unavailable";
 
 export function OrderDetailClient() {
   const { orderId } = useParams<{ orderId: string }>();
-  const [state, setState] = useState<State>("loading"); const [order, setOrder] = useState<Order | null>(null); const [payment, setPayment] = useState<PaymentSummary | null>(null); const [shipment, setShipment] = useState<Shipment | null>(null); const [message, setMessage] = useState<string | null>(null); const [busy, setBusy] = useState<"payment" | "cancel" | null>(null);
+  const [state, setState] = useState<State>("loading"); const refreshRequestedAt = useRef(0); const [order, setOrder] = useState<Order | null>(null); const [payment, setPayment] = useState<PaymentSummary | null>(null); const [shipment, setShipment] = useState<Shipment | null>(null); const [message, setMessage] = useState<string | null>(null); const [busy, setBusy] = useState<"payment" | "cancel" | null>(null);
   const load = useCallback(async () => { if (!guid(orderId)) { setState("not-found"); return; } setState("loading"); setMessage(null); try { const [orderResponse, paymentResponse, shipmentResponse] = await Promise.all([fetch(`/api/orders/${encodeURIComponent(orderId)}`, { cache: "no-store" }), fetch(`/api/payments/orders/${encodeURIComponent(orderId)}`, { cache: "no-store" }), fetch(`/api/orders/${encodeURIComponent(orderId)}/shipment`, { cache: "no-store" })]); const orderPayload: unknown = await orderResponse.json().catch(() => null); const paymentPayload: unknown = await paymentResponse.json().catch(() => null); const shipmentPayload: unknown = await shipmentResponse.json().catch(() => null); if (orderResponse.status === 404) { setState("not-found"); return; } if (!orderResponse.ok || !isOrder(orderPayload)) throw new Error(problemMessage(orderPayload) ?? "Order details could not be loaded."); if (!paymentResponse.ok && paymentResponse.status !== 404) throw new Error(problemMessage(paymentPayload) ?? "Payment status could not be loaded."); setOrder(orderPayload); setPayment(paymentResponse.ok && isPayment(paymentPayload) ? paymentPayload : null); if (!shipmentResponse.ok && shipmentResponse.status !== 404) throw new Error(problemMessage(shipmentPayload) ?? "Shipment tracking could not be loaded."); setShipment(shipmentResponse.ok && isShipment(shipmentPayload) ? shipmentPayload : null); setState("ready"); } catch (error) { setMessage(error instanceof Error ? error.message : "Order details could not be loaded."); setState("unavailable"); } }, [orderId]);
-  useEffect(() => { const task = window.setTimeout(() => { void load(); }, 0); return () => window.clearTimeout(task); }, [load]); function resumeHostedPayment() {
+  useEffect(() => { const task = window.setTimeout(() => { void load(); }, 0); return () => window.clearTimeout(task); }, [load]);
+  useCustomerRealtime((update) => {
+    if (update.resourceId !== orderId || Date.now() - refreshRequestedAt.current < 500) return;
+    refreshRequestedAt.current = Date.now();
+    setMessage("A confirmed order update was received. Refreshing the latest status.");
+    void load();
+  }, state === "ready");
+  function resumeHostedPayment() {
     if (payment?.providerCheckoutUrl) {
       window.location.assign(payment.providerCheckoutUrl);
     }

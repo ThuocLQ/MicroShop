@@ -30,7 +30,7 @@
 	}
 
 	@apiPaths {
-		path /alive /health /auth /auth/* /catalog /catalog/* /cart /cart/* /orders /orders/* /payments /payments/* /webhooks /webhooks/* /inventory /inventory/* /discounts /discounts/* /suppliers /suppliers/* /procurement /procurement/* /order-summaries /order-summaries/*
+		path /alive /health /auth /auth/* /catalog /catalog/* /cart /cart/* /orders /orders/* /payments /payments/* /webhooks /webhooks/* /inventory /inventory/* /discounts /discounts/* /suppliers /suppliers/* /procurement /procurement/* /order-summaries /order-summaries/* /realtime /realtime/*
 	}
 	handle @apiPaths {
 		reverse_proxy api-gateway:8080 {

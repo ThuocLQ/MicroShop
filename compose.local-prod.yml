@@ -549,7 +549,7 @@ services:
         condition: service_healthy
 
   notificationworker:
-    <<: *worker-runtime
+    <<: *web-service-runtime
     image: microshop/notificationworker:local-prod
     build:
       context: .
@@ -559,6 +559,11 @@ services:
         PROJECT_DLL: NotificationWorker.dll
     environment:
       DOTNET_ENVIRONMENT: Docker
+      ASPNETCORE_ENVIRONMENT: Docker
+      ASPNETCORE_HTTP_PORTS: 8080
+      Jwt__Issuer: MicroShop.IdentityService
+      Jwt__Audience: MicroShop.Client
+      Jwt__SecretKey: ${MICROSHOP_JWT_SECRET_KEY:?Set MICROSHOP_JWT_SECRET_KEY in .env.local-prod}
       RabbitMq__Host: rabbitmq
       RabbitMq__VirtualHost: /
       RabbitMq__UserName: microshop
@@ -643,7 +648,7 @@ services:
       supplierservice:
         condition: service_healthy
       notificationworker:
-        condition: service_started
+        condition: service_healthy
 
   storefront:
     <<: *web-service-runtime

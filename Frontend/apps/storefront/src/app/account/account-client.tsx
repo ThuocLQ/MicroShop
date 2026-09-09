@@ -6,6 +6,7 @@ import { ClipboardList, Heart, LoaderCircle, MapPin, RefreshCw, ShieldCheck, Tra
 import { AddressSelection, type AddressLoadState } from "@/components/address-selection";
 import { StorefrontFooter, StorefrontHeader } from "@/components/storefront-shell";
 import { problemMessage } from "@/lib/http/problem-details";
+import { useCustomerRealtime } from "@/lib/realtime/use-customer-realtime";
 import { ProductImage } from "@/components/product-image";
 import type { CatalogProduct } from "@/lib/gateway/catalog";
 import type { CurrentUser, CustomerAddress, OrderSummary } from "@/lib/storefront/types";
@@ -71,6 +72,10 @@ export function AccountClient() {
     const task = window.setTimeout(() => { void loadAccount(); }, 0);
     return () => window.clearTimeout(task);
   }, [loadAccount]);
+
+  useCustomerRealtime(() => {
+    void loadAccount();
+  }, loadState === "ready");
 
   async function reloadAddresses() {
     setAddressLoadState("loading");

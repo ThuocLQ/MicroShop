@@ -204,7 +204,8 @@ public sealed class Order
 
         var isAllowedTransition = (Status, targetStatus) switch
         {
-            (OrderStatus.Paid, OrderStatus.Confirmed) => true,
+                        (OrderStatus.Paid, OrderStatus.Confirmed) => true,
+            (OrderStatus.PendingPayment, OrderStatus.Confirmed) => true,
             (OrderStatus.Confirmed, OrderStatus.Shipped) => true,
             (OrderStatus.Shipped, OrderStatus.Delivered) => true,
             _ => false

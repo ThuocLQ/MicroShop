@@ -5,7 +5,6 @@ import { ArrowLeft, CircleAlert, ClipboardList, CreditCard, LoaderCircle, Refres
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { OperationsWorkspace } from "@/components/operations-workspace";
 import { FulfillmentCell } from "@/components/fulfillment-cell";
-import { problemMessage } from "@/lib/http/problem-details";
 import { loadOrderPaymentQueue, OperationsApiError, type OrderPaymentRow } from "@/lib/operations/order-payment-queue";
 
 type User = { userId: string; userName: string; role: string };
@@ -145,7 +144,5 @@ function humanize(value: string) { return value.replace(/([A-Z])/g, " $1").trim(
 function shortId(value: string) { return value.slice(0, 8); }
 function formatDate(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? "Unknown" : dateTime.format(date); }
 function filterLabel(value: QueueFilter) { return value === "attention" ? "Needs review" : value === "all" ? "All orders" : value === "unpaid" ? "Not captured" : "Captured"; }
-function isOrder(value: unknown): value is OrderPaymentRow { return typeof value === "object" && value !== null && typeof (value as Record<string, unknown>).id === "string" && typeof (value as Record<string, unknown>).status === "string"; }
-const messageOf = problemMessage;
 function isUser(value: unknown): value is User { return typeof value === "object" && value !== null && typeof (value as Record<string, unknown>).userId === "string" && typeof (value as Record<string, unknown>).role === "string"; }
 function isAbortError(value: unknown) { return value instanceof DOMException && value.name === "AbortError"; }

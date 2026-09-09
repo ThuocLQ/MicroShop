@@ -85,6 +85,29 @@ public sealed class DapperPaymentRepository : IPaymentRepository
         return payment;
     }
 
+    public async Task<Payment> CreateAsync(
+        Payment payment,
+        System.Data.IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        await transaction.Connection!.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO Payments (
+                Id, OrderId, CustomerId, Amount, Currency, Status, ProviderTransactionId, FailureReason,
+                CreatedAtUtc, CompletedAtUtc, AuthorizedAtUtc, CaptureRequestedAtUtc, CapturedAtUtc,
+                VoidRequestedAtUtc, VoidedAtUtc, RefundRequestedAtUtc, RefundedAtUtc, Provider,
+                ProviderSessionId, PaymentActionIdempotencyKey, PaymentActionRequestHash,
+                PaymentActionExpiresAtUtc, ProviderCheckoutUrl)
+            VALUES (
+                @Id, @OrderId, @CustomerId, @Amount, @Currency, @Status, @ProviderTransactionId, @FailureReason,
+                @CreatedAtUtc, @CompletedAtUtc, @AuthorizedAtUtc, @CaptureRequestedAtUtc, @CapturedAtUtc,
+                @VoidRequestedAtUtc, @VoidedAtUtc, @RefundRequestedAtUtc, @RefundedAtUtc, @Provider,
+                @ProviderSessionId, @PaymentActionIdempotencyKey, @PaymentActionRequestHash,
+                @PaymentActionExpiresAtUtc, @ProviderCheckoutUrl);
+            """, ToParameters(payment), transaction, cancellationToken: cancellationToken));
+
+        return payment;
+    }
+
     public async Task<Payment?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         using var connection = _connectionFactory.CreateConnection();

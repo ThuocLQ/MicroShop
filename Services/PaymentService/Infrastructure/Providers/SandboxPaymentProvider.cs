@@ -26,6 +26,7 @@ public sealed class SandboxPaymentProvider : ISandboxPaymentProvider
     }
 
     public string Name => "Sandbox";
+    public IReadOnlyList<string> SupportedCurrencies => [PaymentProviderPolicy.AnyCurrency];
 
     public Task<PaymentProviderAction> CreateActionAsync(
         PaymentProviderActionRequest request,

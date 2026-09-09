@@ -17,5 +17,6 @@ public enum OrderPaymentSagaEventType
     PaymentAuthorized = 4,
     PaymentCaptured = 5,
     PaymentVoided = 6,
-    PaymentRefunded = 7
+    PaymentRefunded = 7,
+    PaymentCollectionPending = 8
 }

@@ -4,9 +4,10 @@ public sealed class PaymentProviderOptions
 {
     public const string SectionName = "PaymentProvider";
 
-    // Sandbox is intentionally available only to Development/Portfolio hosts.
+    // Sandbox is permitted only when configuration explicitly enables it.
     public string Provider { get; init; } = string.Empty;
     public string[] EnabledProviders { get; init; } = [];
+    public bool AllowSandbox { get; init; }
     public int SandboxActionExpiryMinutes { get; init; } = 30;
 
     public IReadOnlySet<string> GetEnabledProviderNames()

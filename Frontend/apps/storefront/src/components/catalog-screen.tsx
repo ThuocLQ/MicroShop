@@ -1,15 +1,15 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Box, ClipboardList, LoaderCircle, LogIn, RefreshCw, Search, ShoppingBag, Sparkles, UserRound } from "lucide-react";
+import { AlertTriangle, ArrowRight, Box, LoaderCircle, LogIn, RefreshCw, Search, ShoppingBag, Sparkles, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthDialog } from "@/components/auth-dialog";
-import { EmailVerificationStatus } from "@/components/email-verification-status";
 import { type AddressLoadState } from "@/components/address-selection";
 import { BasketPanel } from "@/components/basket-panel";
 import { OrderPanel } from "@/components/order-panel";
 import { ProductDetailDialog } from "@/components/product-detail-dialog";
 import { ProductImage } from "@/components/product-image";
+import { StorefrontFooter } from "@/components/storefront-shell";
 import { type CatalogProduct, getCatalogProducts } from "@/lib/gateway/catalog";
 import { problemMessage } from "@/lib/http/problem-details";
 import type { AddressInput, Basket, CheckoutQuote, CurrentUser, CustomerAddress, OrderSummary, PaymentSummary } from "@/lib/storefront/types";
@@ -55,14 +55,12 @@ export function CatalogScreen() {
   const [ordersMessage, setOrdersMessage] = useState<string | null>(null);
   const [isOrdersOpen, setIsOrdersOpen] = useState(false);
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
-  const [startingPaymentOrderId, setStartingPaymentOrderId] = useState<string | null>(null);
   const [completingSandboxPaymentId, setCompletingSandboxPaymentId] = useState<string | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(null);
   const catalogSectionRef = useRef<HTMLElement>(null);
   const checkoutKeys = useRef(new Map<string, string>());
-  const paymentActionKeys = useRef(new Map<string, string>());
   const addressCreateKeys = useRef(new Map<string, string>());
 
   const recoverExpiredSession = useCallback(() => {
@@ -206,9 +204,9 @@ export function CatalogScreen() {
 
   const products = useMemo(() => catalog.products, [catalog.products]);
   const categories = useMemo(() => Array.from(new Set(products.map((product) => product.category?.trim()).filter((category): category is string => Boolean(category)))).sort(), [products]);
+  const categoryHighlights = useMemo(() => categories.map((category) => ({ category, product: products.find((product) => product.category === category) })).filter((item): item is { category: string; product: CatalogProduct } => Boolean(item.product)).slice(0, 4), [categories, products]);
   const visibleProducts = useMemo(() => selectedCategory ? products.filter((product) => product.category === selectedCategory) : products, [products, selectedCategory]);
   const featuredProduct = useMemo(() => visibleProducts.find((product) => product.stockQuantity > 0) ?? visibleProducts[0] ?? null, [visibleProducts]);
-  const editorialProducts = useMemo(() => visibleProducts.filter((product) => product.id !== featuredProduct?.id).slice(0, 3), [featuredProduct?.id, visibleProducts]);
   const searchTerm = query.trim();
   const catalogSummary = catalog.status === "loading" && searchTerm
     ? `Searching catalog for "${searchTerm}"...`
@@ -503,37 +501,6 @@ export function CatalogScreen() {
     }
   }
 
-  async function startPayment(orderId: string) {
-    setStartingPaymentOrderId(orderId);
-    setPaymentMessage(null);
-    try {
-      const idempotencyKey = paymentActionKeys.current.get(orderId) ?? crypto.randomUUID();
-      paymentActionKeys.current.set(orderId, idempotencyKey);
-      const response = await fetch("/api/payments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-        body: JSON.stringify({ orderId }),
-      });
-      const payload: unknown = await response.json().catch(() => null);
-      if (response.status === 401) {
-        recoverExpiredSession();
-        return;
-      }
-      if (!response.ok || !isPaymentAction(payload)) throw new Error(messageOf(payload) ?? "Payment could not be initiated.");
-      setPaymentsByOrder((current) => ({ ...current, [orderId]: payload.payment }));
-      if (payload.action.checkoutUrl) {
-        window.location.assign(payload.action.checkoutUrl);
-        return;
-      }
-      setPaymentMessage("Payment action #" + payload.payment.id.slice(0, 8).toUpperCase() + " is " + labelPaymentStatus(payload.payment.status) + " and expires " + new Date(payload.action.expiresAtUtc).toLocaleTimeString() + ". Your order remains awaiting confirmed payment; refresh after the provider callback is processed.");
-      await loadOrders();
-    } catch (error) {
-      setPaymentMessage(error instanceof Error ? error.message : "Payment could not be initiated.");
-    } finally {
-      setStartingPaymentOrderId(null);
-    }
-  }
-
   async function completeSandboxPayment(paymentId: string, orderId: string) {
     setCompletingSandboxPaymentId(paymentId);
     setPaymentMessage(null);
@@ -615,14 +582,6 @@ export function CatalogScreen() {
     }
   }
 
-  function openAccount() {
-    if (session.status !== "authenticated") {
-      openAuth();
-      return;
-    }
-    openOrders();
-  }
-
   function signedIn(user: CurrentUser) {
     setSession({ status: "authenticated", user });
     setIsAuthOpen(false);
@@ -654,7 +613,7 @@ export function CatalogScreen() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--background)]">
+    <main className="flex min-h-screen flex-col bg-[var(--background)]">
       <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-white/95 backdrop-blur">
         <div className="mx-auto flex min-h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <button aria-label="Browse catalog" className="flex shrink-0 items-center gap-2 text-left" onClick={openCatalog} type="button">
@@ -675,36 +634,38 @@ export function CatalogScreen() {
       </header>
 
       <div className="border-b border-[var(--line)] bg-[#fbfcfa] px-4 py-2 text-center text-xs text-[var(--muted)] sm:text-sm">Current price and availability are confirmed again when you review your order.</div>
-
-      <section className="border-b border-[var(--line)] bg-white" ref={catalogSectionRef}>
-        <div className="mx-auto grid min-h-[540px] max-w-7xl items-center gap-8 px-4 py-12 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:px-8 lg:py-16">
-          <div className="order-2 max-w-xl lg:order-1">
-            <p className="eyebrow"><Sparkles aria-hidden="true" size={14} /> Made for the everyday</p>
-            {featuredProduct ? <><p className="mt-6 text-sm font-medium text-[var(--accent)]">{featuredProduct.category ?? "Current collection"}</p><h1 className="mt-2 text-4xl font-semibold tracking-tight text-[var(--foreground)] sm:text-5xl lg:text-6xl">{featuredProduct.name}</h1><p className="mt-5 max-w-lg text-base leading-7 text-[var(--muted)] sm:text-lg">{featuredProduct.description}</p><div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3"><p className="text-xl font-semibold">{money.format(featuredProduct.price)}</p><Stock quantity={featuredProduct.stockQuantity} /></div><div className="mt-8 flex flex-wrap gap-3"><button className="store-primary-button" onClick={() => setSelectedProduct(featuredProduct)} type="button">Explore product <ArrowRight aria-hidden="true" size={17} /></button><Link className="store-secondary-button" href="/products">Shop all products</Link></div></> : <HeroLoading />}
-          </div>
-          <div className="order-1 grid min-h-[320px] place-items-center overflow-hidden rounded-sm bg-[#edf1ee] p-6 sm:min-h-[460px] lg:order-2 lg:p-12">
-            {featuredProduct ? <HeroMedia product={featuredProduct} /> : <div className="h-full w-full animate-pulse bg-[#e2e7e1]" />}
-          </div>
+      <section className="relative isolate min-h-[50rem] overflow-hidden border-b border-[var(--line)] bg-[#e8eee9]" data-testid="catalog-hero" ref={catalogSectionRef}>
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 top-[26rem] sm:top-[24rem]" data-testid="catalog-hero-media">
+          {featuredProduct ? <HeroMedia product={featuredProduct} /> : <div className="h-full w-full animate-pulse bg-[#e2e7e1]" />}
+        </div>
+        <div className="relative z-10 mx-auto flex min-h-[50rem] max-w-7xl flex-col items-center px-4 pb-[27rem] pt-12 text-center sm:px-6 sm:pb-[29rem] sm:pt-16 lg:px-8" data-testid="catalog-hero-content">
+          <p className="eyebrow"><Sparkles aria-hidden="true" size={14} /> Current catalog selection</p>
+          {featuredProduct ? <><p className="mt-5 text-sm font-semibold text-[var(--accent)]">{featuredProduct.category ?? "Current collection"}</p><h1 className="mt-2 max-w-3xl text-4xl font-semibold tracking-tight text-[var(--foreground)] sm:text-5xl lg:text-6xl">{featuredProduct.name}</h1><p className="mt-4 max-w-2xl text-base leading-7 text-[var(--muted)] sm:text-lg">{featuredProduct.description}</p><div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-3"><p className="text-xl font-semibold">{money.format(featuredProduct.price)}</p><Stock quantity={featuredProduct.stockQuantity} /></div><div className="mt-7 flex flex-wrap justify-center gap-3"><button className="store-primary-button" onClick={() => setSelectedProduct(featuredProduct)} type="button">Explore product <ArrowRight aria-hidden="true" size={17} /></button><Link className="store-secondary-button" href="/products">Shop all products</Link></div></> : <HeroLoading />}
         </div>
       </section>
 
-      <section className="border-b border-[var(--line)] bg-white py-9">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Browse by intent</p><h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Find what fits your day.</h2></div><Link className="text-sm font-semibold text-[var(--accent)] hover:underline" href="/products">All products</Link></div><div className="mt-6 flex gap-2 overflow-x-auto pb-1" role="list">{categories.map((category) => <button aria-pressed={selectedCategory === category} className={`store-category-chip ${selectedCategory === category ? "is-active" : ""}`} key={category} onClick={() => setSelectedCategory((current) => current === category ? null : category)} type="button">{category}</button>)}{selectedCategory ? <button className="store-category-chip" onClick={() => setSelectedCategory(null)} type="button">Clear filter</button> : null}</div></div>
+      <section className="border-b border-[var(--line)] bg-white py-12 sm:py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Shop by category</p><h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Choose a collection to begin.</h2></div><Link className="store-text-action" href="/products">View all products <ArrowRight aria-hidden="true" size={15} /></Link></div>
+          <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{categoryHighlights.map(({ category, product }) => <Link className="group relative isolate min-h-72 overflow-hidden bg-[#edf1ee] p-5 text-white" href={`/products?category=${encodeURIComponent(category)}`} key={category}><ProductImage alt="" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" fallbackClassName="absolute inset-0 bg-[#dce5de]" imageUrl={product.imageUrl} /><span aria-hidden="true" className="absolute inset-0 bg-black/25" /><span className="relative flex h-full flex-col justify-end"><span className="text-xs font-semibold uppercase tracking-[0.08em]">Collection</span><span className="mt-2 text-2xl font-semibold tracking-tight">{category}</span><span className="mt-3 inline-flex items-center gap-2 text-sm font-semibold">Explore <ArrowRight aria-hidden="true" size={16} /></span></span></Link>)}</div>
+          <div className="mt-7 flex gap-2 overflow-x-auto pb-1" role="list">{categories.map((category) => <button aria-pressed={selectedCategory === category} className={`store-category-chip ${selectedCategory === category ? "is-active" : ""}`} key={category} onClick={() => setSelectedCategory((current) => current === category ? null : category)} type="button">{category}</button>)}{selectedCategory ? <button className="store-category-chip" onClick={() => setSelectedCategory(null)} type="button">Clear filter</button> : null}</div>
+        </div>
       </section>
 
-      <section className="bg-[var(--background)] py-14 sm:py-18">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"><div className="flex flex-col gap-5 border-b border-[var(--line)] pb-6 lg:flex-row lg:items-end lg:justify-between"><div className="max-w-2xl"><p className="eyebrow">Current catalog</p><h2 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Thoughtful tools, ready now.</h2><p className="mt-3 text-sm leading-6 text-[var(--muted)] sm:text-base">Browse real catalog pricing and availability. Sign in only when you are ready to save an item to your cart.</p></div><label className="store-search"><span className="sr-only">Search products</span><Search aria-hidden="true" size={18} /><input onChange={(event) => setQuery(event.target.value)} placeholder="Search the catalog" type="search" value={query} /></label></div>
+
+      <section className="flex-1 bg-[var(--background)] py-14 sm:py-18">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"><div className="flex flex-col gap-5 border-b border-[var(--line)] pb-6 lg:flex-row lg:items-end lg:justify-between"><div className="max-w-2xl"><p className="eyebrow">Selected from the catalog</p><h2 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Built around the things you use.</h2><p className="mt-3 text-sm leading-6 text-[var(--muted)] sm:text-base">Current product, price and availability data comes directly from the Catalog. The final check happens during order review.</p></div><label className="store-search"><span className="sr-only">Search products</span><Search aria-hidden="true" size={18} /><input onChange={(event) => setQuery(event.target.value)} placeholder="Search the catalog" type="search" value={query} /></label></div>
           <div aria-live="polite" className="mt-5 flex min-h-5 items-center justify-between gap-4 text-sm text-[var(--muted)]"><p>{selectedCategory ? `${selectedCategory} · ${catalogSummary}` : catalogSummary}</p>{catalog.status === "loading" && products.length > 0 ? <span className="inline-flex items-center gap-2"><LoaderCircle aria-hidden="true" className="animate-spin" size={15} />Updating catalog</span> : null}</div>
           {catalog.status === "unavailable" ? <CatalogUnavailable onRetry={reloadCatalog} /> : null}
           {catalog.status === "loading" && catalog.products.length === 0 ? <CatalogLoading /> : null}
-          {catalog.status !== "loading" || catalog.products.length > 0 ? <ProductGrid busyProductId={busyProductId} onAdd={addToBasket} onViewDetails={setSelectedProduct} products={visibleProducts} query={query || selectedCategory || ""} /> : null}
+          {catalog.status !== "loading" || catalog.products.length > 0 ? <><ProductGrid busyProductId={busyProductId} onAdd={addToBasket} onViewDetails={setSelectedProduct} products={visibleProducts.slice(0, 8)} query={query || selectedCategory || ""} />{visibleProducts.length > 8 && !query && !selectedCategory ? <div className="mt-10 flex justify-center"><Link className="store-secondary-button" href="/products">View the full catalog <ArrowRight aria-hidden="true" size={16} /></Link></div> : null}</> : null}
         </div>
       </section>
 
+      <StorefrontFooter />
       <ProductDetailDialog busyProductId={busyProductId} onAdd={addToBasket} onClose={() => setSelectedProduct(null)} product={selectedProduct} />
       <AuthDialog notice={authNotice} onClose={() => { setIsAuthOpen(false); setAuthNotice(null); }} onSignedIn={signedIn} open={isAuthOpen} />
       {isBasketOpen ? <BasketPanel addressLoadState={addressLoadState} addressMessage={addressMessage} addresses={addresses} basket={basket} busyAddressId={busyAddressId} busyProductId={busyProductId} confirmation={orderConfirmation} isCheckingOut={isCheckingOut} isReviewingCheckout={isReviewingCheckout} loadState={basketLoadState} message={basketMessage} onChangeQuantity={changeQuantity} onCheckout={checkout} onClose={() => setIsBasketOpen(false)} onCreateAddress={createAddress} onDeleteAddress={deleteAddress} onInvalidateQuote={() => setCheckoutQuote(null)} onRefresh={retryBasket} onRemove={removeItem} onRetry={retryBasket} onRetryAddresses={() => { setAddressMessage(null); void loadAddresses().catch((error: unknown) => setAddressMessage(error instanceof Error ? error.message : "Your saved addresses could not be loaded.")); }} onReview={reviewCheckout} onSelectAddress={setSelectedAddressId} onSetDefaultAddress={setDefaultAddress} onUpdateAddress={updateAddress} onViewOrders={() => { setIsBasketOpen(false); openOrders(); }} quote={checkoutQuote} selectedAddressId={selectedAddressId} /> : null}
-      {isOrdersOpen ? <OrderPanel cancellingOrderId={cancellingOrderId} completingSandboxPaymentId={completingSandboxPaymentId} isLoading={isOrdersLoading} message={ordersMessage} onCancelOrder={cancelOrder} onClose={() => setIsOrdersOpen(false)} onCompleteSandboxPayment={completeSandboxPayment} onRetry={() => void loadOrders()} onStartPayment={startPayment} orders={orders} paymentsByOrder={paymentsByOrder} paymentMessage={paymentMessage} recentOrder={recentOrder} startingPaymentOrderId={startingPaymentOrderId} /> : null}
+      {isOrdersOpen ? <OrderPanel cancellingOrderId={cancellingOrderId} completingSandboxPaymentId={completingSandboxPaymentId} isLoading={isOrdersLoading} message={ordersMessage} onCancelOrder={cancelOrder} onClose={() => setIsOrdersOpen(false)} onCompleteSandboxPayment={completeSandboxPayment} onRetry={() => void loadOrders()} orders={orders} paymentsByOrder={paymentsByOrder} paymentMessage={paymentMessage} recentOrder={recentOrder} /> : null}
     </main>
   );
 }
@@ -832,17 +793,4 @@ function isSandboxPaymentCompletion(value: unknown): value is { payment: Payment
   return typeof value === "object" && value !== null && isPaymentSummary((value as Record<string, unknown>).payment);
 }
 
-function isPaymentAction(value: unknown): value is { payment: PaymentSummary; action: { expiresAtUtc: string; checkoutUrl: string | null } } {
-  if (typeof value !== "object" || value === null) return false;
-  const payload = value as Record<string, unknown>;
-  if (typeof payload.payment !== "object" || payload.payment === null || typeof payload.action !== "object" || payload.action === null) return false;
-  const payment = payload.payment as Record<string, unknown>;
-  const action = payload.action as Record<string, unknown>;
-  return isPaymentSummary(payment)
-    && typeof action.expiresAtUtc === "string"
-    && (typeof action.checkoutUrl === "string" || action.checkoutUrl === null);
-}
-
 function isOrders(value: unknown): value is OrderSummary[] { return Array.isArray(value) && value.every(isOrderSummary); }
-
-function labelPaymentStatus(status: string) { return status.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(); }

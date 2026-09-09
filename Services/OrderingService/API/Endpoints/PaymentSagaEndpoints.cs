@@ -22,7 +22,7 @@ public static class PaymentSagaEndpoints
         {
             if (!TryParseEventType(request.EventType, out var eventType))
             {
-                return ApiProblemResults.BadRequest("EventType must be 'PaymentAuthorized', 'PaymentCaptured', 'PaymentVoided', 'PaymentRefunded', 'PaymentSucceeded', 'PaymentFailed', or 'PaymentTimedOut'.", "PAYMENT_EVENT_TYPE_INVALID");
+                return ApiProblemResults.BadRequest("EventType must be 'PaymentCollectionPending', 'PaymentAuthorized', 'PaymentCaptured', 'PaymentVoided', 'PaymentRefunded', 'PaymentSucceeded', 'PaymentFailed', or 'PaymentTimedOut'.", "PAYMENT_EVENT_TYPE_INVALID");
             }
 
             var result = await sender.Send(new ApplyPaymentSagaEventCommand(
@@ -48,6 +48,9 @@ public static class PaymentSagaEndpoints
         }
 
         var normalized = eventType.Trim();
+        normalized = normalized.Equals("CollectionPending", StringComparison.OrdinalIgnoreCase)
+            ? nameof(OrderPaymentSagaEventType.PaymentCollectionPending)
+            : normalized;
         normalized = normalized.Equals("Succeeded", StringComparison.OrdinalIgnoreCase)
             ? nameof(OrderPaymentSagaEventType.PaymentSucceeded)
             : normalized;

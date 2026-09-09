@@ -1,11 +1,17 @@
 :8080 {
 	encode zstd gzip
 
+	request_body {
+		max_size 1MB
+	}
+
 	header {
 		-X-Powered-By
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' https: data:; connect-src 'self'; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; upgrade-insecure-requests"
 	}
 
 	@operations host operations.localhost
@@ -24,7 +30,7 @@
 	}
 
 	@apiPaths {
-		path /alive /health /auth /auth/* /catalog /catalog/* /cart /cart/* /orders /orders/* /payments /payments/* /webhooks /webhooks/* /inventory /inventory/* /discounts /discounts/* /suppliers /suppliers/* /procurement /procurement/* /order-summaries /order-summaries/*
+		path /alive /health /auth /auth/* /catalog /catalog/* /cart /cart/* /orders /orders/* /payments /payments/* /webhooks /webhooks/* /inventory /inventory/* /discounts /discounts/* /suppliers /suppliers/* /procurement /procurement/* /order-summaries /order-summaries/* /realtime /realtime/*
 	}
 	handle @apiPaths {
 		reverse_proxy api-gateway:8080 {

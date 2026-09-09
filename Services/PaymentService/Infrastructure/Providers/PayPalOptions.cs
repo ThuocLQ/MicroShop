@@ -11,5 +11,6 @@ public sealed class PayPalOptions
     public string WebhookId { get; init; } = string.Empty;
     public string ReturnUrl { get; init; } = string.Empty;
     public string CancelUrl { get; init; } = string.Empty;
+    public string[] SupportedCurrencies { get; init; } = ["USD"];
     public int ActionExpiryMinutes { get; init; } = 30;
 }

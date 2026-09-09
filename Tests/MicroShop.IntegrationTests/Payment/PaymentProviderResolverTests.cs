@@ -26,13 +26,24 @@ public sealed class PaymentProviderResolverTests
 
         var available = resolver.GetAvailableProviders();
 
-        Assert.Equal(["PayPal", "Sandbox"], available.Select(provider => provider.Name));
-        Assert.Contains(available, provider => provider.Name == "PayPal" && provider.RequiresRedirect);
+        Assert.Equal(["Sandbox", "PayPal"], available.Select(provider => provider.Name));
+        Assert.Contains(available, provider => provider.Name == "PayPal" && provider.RequiresRedirect && provider.SupportedCurrencies.SequenceEqual(["USD"]));
+        Assert.Contains(available, provider => provider.Name == "Sandbox" && provider.SupportedCurrencies.SequenceEqual([PaymentProviderPolicy.AnyCurrency]));
+    }
+
+    [Fact]
+    public void DefaultProvider_IsListedFirst_AndMoMoRemainsSecondary()
+    {
+        var resolver = CreateResolver("PayPal", ["Sandbox", "PayPal", "MoMo"]);
+
+        var available = resolver.GetAvailableProviders();
+
+        Assert.Equal(["PayPal", "MoMo", "Sandbox"], available.Select(provider => provider.Name));
     }
 
     private static PaymentProviderResolver CreateResolver(string defaultProvider, string[] enabledProviders) =>
         new(
-            [new StubProvider("Sandbox"), new StubProvider("PayPal")],
+            [new StubProvider("Sandbox"), new StubProvider("PayPal"), new StubProvider("MoMo")],
             Options.Create(new PaymentProviderOptions
             {
                 Provider = defaultProvider,
@@ -42,6 +53,7 @@ public sealed class PaymentProviderResolverTests
     private sealed class StubProvider(string name) : IPaymentProvider
     {
         public string Name => name;
+        public IReadOnlyList<string> SupportedCurrencies => PaymentProviderPolicy.GetSupportedCurrencies(Name);
 
         public Task<PaymentProviderAction> CreateActionAsync(PaymentProviderActionRequest request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();

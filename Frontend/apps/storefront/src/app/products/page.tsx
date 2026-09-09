@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Box, Search, ShoppingBag } from "lucide-react";
+import { ArrowLeft, ArrowRight, Box, Search } from "lucide-react";
 import { ProductImage } from "@/components/product-image";
+import { StorefrontFooter, StorefrontHeader } from "@/components/storefront-shell";
 import { getCatalogDiscovery, type CatalogSort } from "@/lib/gateway/catalog-server";
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -19,14 +20,10 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
   const categories = Array.from(new Set((categorySource?.items ?? []).map((product) => product.category?.trim()).filter((value): value is string => Boolean(value)))).sort();
 
   return (
-    <main className="min-h-screen bg-[var(--background)]">
-      <header className="border-b border-[var(--line)] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <Link className="flex items-center gap-2 text-sm font-semibold tracking-tight" href="/"><span className="grid size-9 place-items-center rounded-sm bg-[var(--foreground)] text-white"><Box aria-hidden="true" size={18} /></span>MicroShop</Link>
-          <nav className="flex items-center gap-1"><Link className="store-nav-link" href="/account">Your account</Link><Link className="store-icon-button" href="/checkout"><ShoppingBag aria-hidden="true" size={18} /><span className="sr-only">Checkout</span></Link></nav>
-        </div>
-      </header>
-      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <main className="flex min-h-screen flex-col bg-[var(--background)]">
+      <StorefrontHeader />
+
+      <section className="mx-auto max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
         <Link className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--accent)] hover:underline" href="/"><ArrowLeft aria-hidden="true" size={16} />Home</Link>
         <div className="mt-7 border-b border-[var(--line)] pb-7"><p className="eyebrow">Catalog</p><h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">Explore the current collection.</h1><p className="mt-4 max-w-2xl text-base leading-7 text-[var(--muted)]">Prices, descriptions and availability are supplied by the live Catalog. Checkout reviews them again before an order is created.</p></div>
         <form className="mt-8 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_190px_auto]" method="get">
@@ -39,6 +36,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
         </form>
         {!discovery ? <Unavailable /> : <CatalogResults category={category} discovery={discovery} keyword={keyword} sort={sort} />}
       </section>
+      <StorefrontFooter />
     </main>
   );
 }

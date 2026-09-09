@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ClipboardList, LoaderCircle, MapPin, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
+import { ClipboardList, Heart, LoaderCircle, MapPin, RefreshCw, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import { AddressSelection, type AddressLoadState } from "@/components/address-selection";
+import { StorefrontFooter, StorefrontHeader } from "@/components/storefront-shell";
 import { problemMessage } from "@/lib/http/problem-details";
+import { useCustomerRealtime } from "@/lib/realtime/use-customer-realtime";
+import { ProductImage } from "@/components/product-image";
+import type { CatalogProduct } from "@/lib/gateway/catalog";
 import type { CurrentUser, CustomerAddress, OrderSummary } from "@/lib/storefront/types";
 
 type LoadState = "loading" | "ready" | "unauthenticated" | "unavailable";
@@ -14,6 +18,10 @@ export function AccountClient() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
   const [orders, setOrders] = useState<OrderSummary[]>([]);
+  const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
+  const [savedProducts, setSavedProducts] = useState<Map<string, CatalogProduct>>(new Map());
+  const [savedBusyId, setSavedBusyId] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [addressMessage, setAddressMessage] = useState<string | null>(null);
   const [busyAddressId, setBusyAddressId] = useState<string | null>(null);
@@ -34,17 +42,23 @@ export function AccountClient() {
       if (!sessionResponse.ok || !isSession(sessionPayload)) throw new Error(problemMessage(sessionPayload) ?? "Your account could not be loaded.");
       setUser(sessionPayload.user);
 
-      const [addressesResponse, ordersResponse] = await Promise.all([
+      const [addressesResponse, ordersResponse, savedItemsResponse] = await Promise.all([
         fetch("/api/addresses", { cache: "no-store" }),
         fetch("/api/orders", { cache: "no-store" }),
+        fetch("/api/saved-items", { cache: "no-store" }),
       ]);
       const addressesPayload: unknown = await addressesResponse.json().catch(() => null);
       const ordersPayload: unknown = await ordersResponse.json().catch(() => null);
+      const savedItemsPayload: unknown = await savedItemsResponse.json().catch(() => null);
       if (!addressesResponse.ok || !isAddresses(addressesPayload)) throw new Error(problemMessage(addressesPayload) ?? "Saved addresses could not be loaded.");
       if (!ordersResponse.ok || !isOrders(ordersPayload)) throw new Error(problemMessage(ordersPayload) ?? "Orders could not be loaded.");
+      if (!savedItemsResponse.ok || !isSavedItems(savedItemsPayload)) throw new Error(problemMessage(savedItemsPayload) ?? "Saved items could not be loaded.");
 
       setAddresses(addressesPayload);
       setOrders(ordersPayload);
+      setSavedItems(savedItemsPayload);
+      const resolved = await Promise.all(savedItemsPayload.map(async (item) => { const response = await fetch(`/api/catalog/products/${encodeURIComponent(item.productId)}`, { cache: "no-store" }); const payload: unknown = await response.json().catch(() => null); return isCatalogProduct(payload) ? payload : null; }));
+      setSavedProducts(new Map(resolved.filter((product): product is CatalogProduct => product !== null).map(product => [product.id, product])));
       setAddressLoadState("ready");
       setLoadState("ready");
     } catch (error) {
@@ -58,6 +72,10 @@ export function AccountClient() {
     const task = window.setTimeout(() => { void loadAccount(); }, 0);
     return () => window.clearTimeout(task);
   }, [loadAccount]);
+
+  useCustomerRealtime(() => {
+    void loadAccount();
+  }, loadState === "ready");
 
   async function reloadAddresses() {
     setAddressLoadState("loading");
@@ -118,19 +136,30 @@ export function AccountClient() {
       setPreferenceBusy(false);
     }
   }
+  async function removeSavedItem(productId: string) {
+    setSavedBusyId(productId); setSavedMessage(null);
+    try {
+      const response = await fetch(`/api/saved-items/${encodeURIComponent(productId)}`, { method: "DELETE" });
+      if (response.status === 401) throw new Error("Your session has expired. Sign in again to continue.");
+      if (!response.ok && response.status !== 404) { const payload: unknown = await response.json().catch(() => null); throw new Error(problemMessage(payload) ?? "This saved item could not be removed."); }
+      setSavedItems(current => current.filter(item => item.productId !== productId));
+      setSavedProducts(current => { const next = new Map(current); next.delete(productId); return next; });
+    } catch (error) { setSavedMessage(error instanceof Error ? error.message : "This saved item could not be removed."); } finally { setSavedBusyId(null); }
+  }
   const selectedAddressId = addresses.find((address) => address.isDefault)?.id ?? addresses[0]?.id ?? null;
 
   if (loadState === "loading") return <Loading />;
   if (loadState === "unauthenticated") return <SignInRequired />;
   if (loadState === "unavailable" || !user) return <Unavailable message={message} onRetry={loadAccount} />;
 
-  return <main className="min-h-screen bg-[var(--background)]">
-    <header className="border-b border-[var(--line)] bg-[var(--surface)]"><div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8"><Link className="inline-flex items-center gap-2 text-sm font-medium text-[var(--accent)] hover:underline" href="/"><ArrowLeft aria-hidden="true" size={16} />Continue shopping</Link><Link className="text-sm font-semibold" href="/products">Browse products</Link></div></header>
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"><header className="border-b border-[var(--line)] pb-6"><p className="text-sm font-medium text-[var(--accent)]">Account</p><div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Welcome back, {user.userName}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">Manage delivery addresses and review the orders confirmed under this account.</p></div><EmailState verified={user.isEmailVerified} /></div></header>
-      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]"><section><div className="flex items-center justify-between gap-4"><div><h2 className="text-xl font-semibold">Recent orders</h2><p className="mt-1 text-sm text-[var(--muted)]">Payment and fulfillment updates are shown after the server confirms them.</p></div><Link className="text-sm font-semibold text-[var(--accent)] hover:underline" href="/">Open order status</Link></div><OrderList orders={orders} /></section>
-        <aside className="rounded-sm border border-[var(--line)] bg-[var(--surface)] p-5"><div className="flex gap-3"><UserRound aria-hidden="true" className="mt-0.5 text-[var(--accent)]" size={20} /><div><h2 className="font-semibold">Account profile</h2><p className="mt-1 text-sm text-[var(--muted)]">{user.userName}</p><p className="mt-1 text-xs text-[var(--muted)]">Profile editing and password recovery will be available from this account area.</p></div></div><NotificationPreferencePanel busy={preferenceBusy} message={preferenceMessage} receiveOrderUpdates={user.receiveOrderUpdates} verified={user.isEmailVerified} onChange={(value) => void updateOrderUpdatePreference(value)} /><AddressSelection addresses={addresses} busyAddressId={busyAddressId} loadState={addressLoadState} message={addressMessage} onCreate={(input) => void mutateAddress("", "POST", input)} onDelete={(addressId) => void mutateAddress(`/${encodeURIComponent(addressId)}`, "DELETE", undefined, addressId)} onRetry={() => void reloadAddresses()} onSelect={() => undefined} onSetDefault={(addressId) => void mutateAddress(`/${encodeURIComponent(addressId)}/default`, "PUT", undefined, addressId)} onUpdate={(addressId, input) => void mutateAddress(`/${encodeURIComponent(addressId)}`, "PATCH", input, addressId)} selectedAddressId={selectedAddressId} /></aside>
+  return <main className="flex min-h-screen flex-col bg-[var(--background)]">
+    <StorefrontHeader />
+    <div className="mx-auto max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:px-8"><header className="border-b border-[var(--line)] pb-6"><p className="text-sm font-medium text-[var(--accent)]">Account</p><div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Welcome back, {user.userName}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">Manage delivery addresses and review the orders confirmed under this account.</p></div><EmailState verified={user.isEmailVerified} /></div></header>
+      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]"><section className="space-y-10"><SavedItems items={savedItems} message={savedMessage} products={savedProducts} busyProductId={savedBusyId} onRemove={(productId) => void removeSavedItem(productId)} /><section><div className="flex items-center justify-between gap-4"><div><h2 className="text-xl font-semibold">Recent orders</h2><p className="mt-1 text-sm text-[var(--muted)]">Payment and fulfillment updates are shown after the server confirms them.</p></div><Link className="text-sm font-semibold text-[var(--accent)] hover:underline" href="/">Open order status</Link></div><OrderList orders={orders} /></section></section>
+        <aside className="rounded-sm border border-[var(--line)] bg-[var(--surface)] p-5"><div className="flex gap-3"><UserRound aria-hidden="true" className="mt-0.5 text-[var(--accent)]" size={20} /><div><h2 className="font-semibold">Account</h2><p className="mt-1 text-sm text-[var(--muted)]">{user.userName}</p><p className="mt-1 text-xs text-[var(--muted)]">Manage your saved addresses and order-update preference here.</p></div></div><NotificationPreferencePanel busy={preferenceBusy} message={preferenceMessage} receiveOrderUpdates={user.receiveOrderUpdates} verified={user.isEmailVerified} onChange={(value) => void updateOrderUpdatePreference(value)} /><AddressSelection addresses={addresses} busyAddressId={busyAddressId} loadState={addressLoadState} message={addressMessage} onCreate={(input) => void mutateAddress("", "POST", input)} onDelete={(addressId) => void mutateAddress(`/${encodeURIComponent(addressId)}`, "DELETE", undefined, addressId)} onRetry={() => void reloadAddresses()} onSelect={() => undefined} onSetDefault={(addressId) => void mutateAddress(`/${encodeURIComponent(addressId)}/default`, "PUT", undefined, addressId)} onUpdate={(addressId, input) => void mutateAddress(`/${encodeURIComponent(addressId)}`, "PATCH", input, addressId)} selectedAddressId={selectedAddressId} /></aside>
       </div>
     </div>
+    <StorefrontFooter />
   </main>;
 }
 
@@ -151,3 +180,7 @@ function humanize(value: string) { return value.replace(/([a-z])([A-Z])/g, "$1 $
 function isSession(value: unknown): value is { user: CurrentUser } { return typeof value === "object" && value !== null && typeof (value as { user?: unknown }).user === "object" && (value as { user: Record<string, unknown> }).user !== null && typeof (value as { user: Record<string, unknown> }).user.userId === "string"; }
 function isAddresses(value: unknown): value is CustomerAddress[] { return Array.isArray(value) && value.every((address) => typeof address === "object" && address !== null && typeof (address as Record<string, unknown>).id === "string"); }
 function isOrders(value: unknown): value is OrderSummary[] { return Array.isArray(value) && value.every((order) => typeof order === "object" && order !== null && typeof (order as Record<string, unknown>).id === "string" && Array.isArray((order as Record<string, unknown>).items)); }
+type SavedItem = { productId: string; createdAtUtc: string };
+function isSavedItems(value: unknown): value is SavedItem[] { return Array.isArray(value) && value.every(item => typeof item === "object" && item !== null && typeof (item as Record<string, unknown>).productId === "string" && typeof (item as Record<string, unknown>).createdAtUtc === "string"); }
+function isCatalogProduct(value: unknown): value is CatalogProduct { return typeof value === "object" && value !== null && typeof (value as Record<string, unknown>).id === "string" && typeof (value as Record<string, unknown>).name === "string" && typeof (value as Record<string, unknown>).price === "number" && typeof (value as Record<string, unknown>).stockQuantity === "number"; }
+function SavedItems({ items, products, busyProductId, message, onRemove }: { items: SavedItem[]; products: Map<string, CatalogProduct>; busyProductId: string | null; message: string | null; onRemove: (productId: string) => void }) { if (items.length === 0) return <section id="saved-items"><h2 className="text-xl font-semibold">Saved items</h2><p className="mt-1 text-sm text-[var(--muted)]">Save products you want to revisit. Saved items use the current Catalog price and availability.</p><div className="mt-5 border border-dashed border-[var(--line)] bg-[var(--surface)] px-5 py-8 text-sm text-[var(--muted)]"><Heart aria-hidden="true" className="mb-3 text-[var(--accent)]" size={22} />No saved items yet. <Link className="font-semibold text-[var(--accent)] hover:underline" href="/products">Explore products</Link></div></section>; return <section id="saved-items"><h2 className="text-xl font-semibold">Saved items</h2><p className="mt-1 text-sm text-[var(--muted)]">Prices and availability are always read from the current Catalog.</p>{message ? <p className="mt-3 text-sm text-[var(--danger)]" role="alert">{message}</p> : null}<ul className="mt-5 grid gap-4 sm:grid-cols-2">{items.map(item => { const product = products.get(item.productId); return <li className="border border-[var(--line)] bg-[var(--surface)] p-4" key={item.productId}>{product ? <><Link className="block overflow-hidden bg-[#edf1ee]" href={`/products/${encodeURIComponent(product.id)}`}><ProductImage alt={product.name} className="aspect-[4/3] w-full object-contain p-4" fallbackClassName="grid aspect-[4/3] place-items-center text-sm text-[var(--muted)]" imageUrl={product.imageUrl} /></Link><Link className="mt-4 block font-semibold hover:underline" href={`/products/${encodeURIComponent(product.id)}`}>{product.name}</Link><p className="mt-1 text-sm text-[var(--muted)]">{formatMoney(product.price, "USD")} · {product.stockQuantity > 0 ? `${product.stockQuantity} in stock` : "Out of stock"}</p></> : <p className="text-sm text-[var(--muted)]">This product is no longer available in the current Catalog.</p>}<button className="mt-4 inline-flex h-9 items-center gap-2 text-sm font-semibold text-[var(--danger)] hover:underline disabled:opacity-60" disabled={busyProductId === item.productId} onClick={() => onRemove(item.productId)} type="button"><Trash2 aria-hidden="true" size={15} />{busyProductId === item.productId ? "Removing" : "Remove"}</button></li>; })}</ul></section>; }

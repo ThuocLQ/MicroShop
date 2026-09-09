@@ -39,19 +39,25 @@ public static class DependencyInjection
         var unsupportedProviders = enabledProviderNames
             .Where(name => !string.Equals(name, "Sandbox", StringComparison.OrdinalIgnoreCase) &&
                            !string.Equals(name, "PayPal", StringComparison.OrdinalIgnoreCase) &&
-                           !string.Equals(name, "MoMo", StringComparison.OrdinalIgnoreCase))
+                           !string.Equals(name, "MoMo", StringComparison.OrdinalIgnoreCase) &&
+                           !string.Equals(name, CashOnDeliveryPaymentProvider.ProviderName, StringComparison.OrdinalIgnoreCase))
             .ToList();
         if (unsupportedProviders.Count > 0)
         {
             throw new InvalidOperationException(
-                $"Unsupported enabled payment providers: {string.Join(", ", unsupportedProviders)}. Supported values are Sandbox, PayPal, and MoMo.");
+                $"Unsupported enabled payment providers: {string.Join(", ", unsupportedProviders)}. Supported values are CashOnDelivery, Sandbox, PayPal, and MoMo.");
+        }
+
+        if (enabledProviderNames.Contains(CashOnDeliveryPaymentProvider.ProviderName))
+        {
+            services.AddSingleton<IPaymentProvider, CashOnDeliveryPaymentProvider>();
         }
 
         if (enabledProviderNames.Contains("Sandbox"))
         {
-            if (!IsSandboxEnvironment(environment))
+            if (!paymentProviderOptions.AllowSandbox)
             {
-                throw new InvalidOperationException("The sandbox payment provider is available only to Development and Portfolio hosts.");
+                throw new InvalidOperationException("The sandbox payment provider requires PaymentProvider:AllowSandbox=true.");
             }
 
             services.AddSingleton<SandboxPaymentProvider>();
@@ -70,6 +76,8 @@ public static class DependencyInjection
                 .Validate(options => IsConfiguredSecret(options.WebhookId), "PaymentProvider:PayPal:WebhookId must be configured through a secret source.")
                 .Validate(options => IsHttpsUrl(options.ReturnUrl), "PaymentProvider:PayPal:ReturnUrl must be an absolute HTTPS URL.")
                 .Validate(options => IsHttpsUrl(options.CancelUrl), "PaymentProvider:PayPal:CancelUrl must be an absolute HTTPS URL.")
+                .Validate(options => HasValidPayPalCurrencies(options.SupportedCurrencies),
+                    "PaymentProvider:PayPal:SupportedCurrencies must be a non-empty subset of PayPal Checkout currencies.")
                 .Validate(options => options.ActionExpiryMinutes is > 0 and <= 24 * 60,
                     "PaymentProvider:PayPal:ActionExpiryMinutes must be between 1 and 1440.")
                 .ValidateOnStart();
@@ -247,6 +255,18 @@ public static class DependencyInjection
     private static bool IsHttpsUrl(string? value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
         string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+    private static bool HasValidPayPalCurrencies(IEnumerable<string>? currencies)
+    {
+        try
+        {
+            _ = PaymentProviderPolicy.GetConfiguredPayPalCurrencies(currencies);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
     private static bool IsProductionWebhookSecret(string? secret)
     {
         if (string.IsNullOrWhiteSpace(secret) || secret.Length < 32)
@@ -259,7 +279,4 @@ public static class DependencyInjection
                && !secret.Contains("CHANGEME", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsSandboxEnvironment(IHostEnvironment environment) =>
-        environment.IsDevelopment() ||
-        string.Equals(environment.EnvironmentName, "Portfolio", StringComparison.OrdinalIgnoreCase);
 }

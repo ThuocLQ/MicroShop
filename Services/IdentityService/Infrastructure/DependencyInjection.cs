@@ -57,7 +57,9 @@ public static class DependencyInjection
         services.AddSingleton<IDatabaseInitializer, PostgresDatabaseInitializer>();
         services.AddScoped<IUserRepository, DapperUserRepository>();
         services.AddScoped<IAddressRepository, DapperAddressRepository>();
+        services.AddScoped<ISavedItemRepository, DapperSavedItemRepository>();
         services.AddScoped<IdentityService.Application.Addresses.AddressService>();
+        services.AddScoped<IdentityService.Application.SavedItems.SavedItemService>();
         services.AddScoped<IdentityService.Application.Auth.EmailVerificationService>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddScoped<IAdminBootstrapper, AdminBootstrapper>();

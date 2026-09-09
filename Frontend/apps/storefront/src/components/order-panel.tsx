@@ -1,12 +1,12 @@
 "use client";
 
 import { Ban, ClipboardList, CreditCard, LoaderCircle, RefreshCw, X } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import type { OrderSummary, PaymentSummary } from "@/lib/storefront/types";
 
 type OrderPanelProps = {
   isLoading: boolean;
-  startingPaymentOrderId: string | null;
   completingSandboxPaymentId: string | null;
   cancellingOrderId: string | null;
   message: string | null;
@@ -16,7 +16,6 @@ type OrderPanelProps = {
   paymentMessage: string | null;
   onClose: () => void;
   onRetry: () => void;
-  onStartPayment: (orderId: string) => void;
   onCompleteSandboxPayment: (paymentId: string, orderId: string) => void;
   onCancelOrder: (orderId: string) => void;
 };
@@ -26,7 +25,6 @@ const dateTime = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeSty
 
 export function OrderPanel({
   isLoading,
-  startingPaymentOrderId,
   completingSandboxPaymentId,
   cancellingOrderId,
   message,
@@ -36,7 +34,6 @@ export function OrderPanel({
   paymentMessage,
   onClose,
   onRetry,
-  onStartPayment,
   onCompleteSandboxPayment,
   onCancelOrder,
 }: OrderPanelProps) {
@@ -71,7 +68,7 @@ export function OrderPanel({
           <div className="grid flex-1 place-items-center px-8 text-center"><div><ClipboardList aria-hidden="true" className="mx-auto text-[var(--muted)]" size={30} /><h3 className="mt-4 font-semibold">No orders yet</h3><p className="mt-2 text-sm text-[var(--muted)]">Orders you place will appear here.</p></div></div>
         ) : (
           <ul className="flex-1 divide-y divide-[var(--line)] overflow-y-auto">
-            {visibleOrders.map((order) => <OrderRow cancellingOrderId={cancellingOrderId} completingSandboxPaymentId={completingSandboxPaymentId} confirmingCancellationOrderId={confirmingCancellationOrderId} key={order.id} onCancelOrder={onCancelOrder} onCompleteSandboxPayment={onCompleteSandboxPayment} onStartPayment={onStartPayment} onToggleCancellationConfirmation={(orderId) => setConfirmingCancellationOrderId((current) => current === orderId ? null : orderId)} order={order} payment={paymentsByOrder[order.id] ?? null} startingPaymentOrderId={startingPaymentOrderId} />)}
+            {visibleOrders.map((order) => <OrderRow cancellingOrderId={cancellingOrderId} completingSandboxPaymentId={completingSandboxPaymentId} confirmingCancellationOrderId={confirmingCancellationOrderId} key={order.id} onCancelOrder={onCancelOrder} onCompleteSandboxPayment={onCompleteSandboxPayment} onToggleCancellationConfirmation={(orderId) => setConfirmingCancellationOrderId((current) => current === orderId ? null : orderId)} order={order} payment={paymentsByOrder[order.id] ?? null} />)}
           </ul>
         )}
       </aside>
@@ -83,8 +80,7 @@ function ErrorNotice({ isLoading, message, onRetry }: { isLoading: boolean; mess
   return <div className="mx-5 mt-4 border-l-2 border-[var(--danger)] bg-[#fff7f6] px-3 py-2 text-sm text-[var(--danger)]" role="alert"><p>{message}</p><button className="mt-2 inline-flex h-8 items-center gap-2 border border-[var(--danger)] px-3 text-sm font-semibold hover:bg-white disabled:opacity-60" disabled={isLoading} onClick={onRetry} type="button"><RefreshCw aria-hidden="true" size={15} />Retry</button></div>;
 }
 
-function OrderRow({ order, payment, startingPaymentOrderId, completingSandboxPaymentId, cancellingOrderId, confirmingCancellationOrderId, onStartPayment, onCompleteSandboxPayment, onCancelOrder, onToggleCancellationConfirmation }: { order: OrderSummary; payment: PaymentSummary | null; startingPaymentOrderId: string | null; completingSandboxPaymentId: string | null; cancellingOrderId: string | null; confirmingCancellationOrderId: string | null; onStartPayment: (orderId: string) => void; onCompleteSandboxPayment: (paymentId: string, orderId: string) => void; onCancelOrder: (orderId: string) => void; onToggleCancellationConfirmation: (orderId: string) => void }) {
-  const isStartingPayment = startingPaymentOrderId === order.id;
+function OrderRow({ order, payment, completingSandboxPaymentId, cancellingOrderId, confirmingCancellationOrderId, onCompleteSandboxPayment, onCancelOrder, onToggleCancellationConfirmation }: { order: OrderSummary; payment: PaymentSummary | null; completingSandboxPaymentId: string | null; cancellingOrderId: string | null; confirmingCancellationOrderId: string | null; onCompleteSandboxPayment: (paymentId: string, orderId: string) => void; onCancelOrder: (orderId: string) => void; onToggleCancellationConfirmation: (orderId: string) => void }) {
   const isCompletingSandboxPayment = payment !== null && completingSandboxPaymentId === payment.id;
   const isCancelling = cancellingOrderId === order.id;
   const isCancellationConfirmationOpen = confirmingCancellationOrderId === order.id;
@@ -95,26 +91,27 @@ function OrderRow({ order, payment, startingPaymentOrderId, completingSandboxPay
       <div className="mt-4 space-y-2 text-sm">{order.items.map((item) => <div className="flex justify-between gap-4" key={item.id}><span className="min-w-0 text-[var(--muted)]">{item.quantity} x {item.productName}</span><span className="shrink-0">{money.format(item.totalPrice)}</span></div>)}</div>
       {order.shippingAddress ? <AddressSnapshot order={order} /> : null}
       <div className="mt-4 flex justify-between gap-4 border-t border-[var(--line)] pt-3 font-semibold"><span>Total</span><span className="text-right">{money.format(order.totalAmount)} {order.currency}</span></div>
-      <PaymentState anyPaymentStarting={startingPaymentOrderId !== null} isCompletingSandboxPayment={isCompletingSandboxPayment} isStartingPayment={isStartingPayment} onCompleteSandboxPayment={onCompleteSandboxPayment} onStartPayment={onStartPayment} order={order} payment={payment} />
+      <PaymentState isCompletingSandboxPayment={isCompletingSandboxPayment} onCompleteSandboxPayment={onCompleteSandboxPayment} order={order} payment={payment} />
       <CancellationAction isCancelling={isCancelling} isConfirmationOpen={isCancellationConfirmationOpen} order={order} onCancelOrder={onCancelOrder} onToggleConfirmation={onToggleCancellationConfirmation} />
     </li>
   );
 }
 
+function PaymentState({ order, payment, isCompletingSandboxPayment, onCompleteSandboxPayment }: { order: OrderSummary; payment: PaymentSummary | null; isCompletingSandboxPayment: boolean; onCompleteSandboxPayment: (paymentId: string, orderId: string) => void }) {
+  if (payment) {
+    const canCompleteSandboxPayment = payment.provider === "Sandbox" && payment.status === "PendingAuthorization";
+    const canChooseAnotherMethod = ["Failed", "Expired", "Cancelled"].includes(payment.status);
+    return <section className="mt-4 border border-[var(--line)] bg-[#fbfcfa] p-3 text-sm"><div className="flex items-center justify-between gap-3"><div><p className="font-medium">Payment {shortId(payment.id)}</p><p className="mt-1 text-xs text-[var(--muted)]">{payment.provider ?? "Payment provider pending"} - {formatDate(payment.createdAtUtc)}</p></div><StatusBadge status={payment.status} /></div><div className="mt-3 flex justify-between gap-3"><span className="text-[var(--muted)]">Amount</span><span className="font-semibold">{money.format(payment.amount)} {payment.currency}</span></div>{payment.paymentActionExpiresAtUtc && isAwaitingProvider(payment.status) ? <p className="mt-2 text-xs text-[var(--muted)]">Provider action expires {formatDate(payment.paymentActionExpiresAtUtc)}. Order status changes only after provider confirmation.</p> : null}{payment.completedAtUtc ? <p className="mt-2 text-xs text-[var(--muted)]">Last confirmed {formatDate(payment.completedAtUtc)}.</p> : null}{payment.failureReason ? <p className="mt-2 text-xs font-medium text-[var(--danger)]">{payment.failureReason}</p> : null}{canCompleteSandboxPayment ? <button className="mt-3 inline-flex min-h-9 items-center gap-2 bg-[var(--accent)] px-3 py-1 text-sm font-semibold text-white hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:bg-[#8ba89b]" disabled={isCompletingSandboxPayment} onClick={() => onCompleteSandboxPayment(payment.id, order.id)} type="button">{isCompletingSandboxPayment ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : <CreditCard aria-hidden="true" size={16} />}{isCompletingSandboxPayment ? "Confirming sandbox payment" : "Complete sandbox payment"}</button> : null}{canChooseAnotherMethod ? <Link className="mt-3 inline-flex min-h-9 items-center gap-2 border border-[var(--accent)] px-3 py-1 text-sm font-semibold text-[var(--accent)] hover:bg-white" href={`/account/orders/${encodeURIComponent(order.id)}/payment`}><CreditCard aria-hidden="true" size={16} />Choose another payment method</Link> : null}</section>;
+  }
+
+  if (order.status !== "PendingPayment") return null;
+  return <section className="mt-4 border border-[#d8d6c5] bg-[#fbfaf2] p-3"><p className="text-sm text-[var(--muted)]">No payment action has been requested. Choosing a method does not confirm payment.</p><Link className="mt-3 inline-flex min-h-9 items-center gap-2 bg-[var(--accent)] px-3 py-1 text-sm font-semibold text-white hover:bg-[var(--accent-strong)]" href={`/account/orders/${encodeURIComponent(order.id)}/payment`}><CreditCard aria-hidden="true" size={16} />Choose payment method</Link></section>;
+}
 function AddressSnapshot({ order }: { order: OrderSummary }) {
   const address = order.shippingAddress!;
   return <div className="mt-4 border border-[var(--line)] bg-[#fbfcfa] p-3 text-sm"><p className="font-medium">Delivery address snapshot</p><p className="mt-1 text-[var(--muted)]">{address.recipientName}<br />{address.line1}{address.line2 ? <><br />{address.line2}</> : null}<br />{address.city}, {address.countryCode}{address.postalCode ? ` ${address.postalCode}` : ""}</p></div>;
 }
 
-function PaymentState({ order, payment, isStartingPayment, isCompletingSandboxPayment, anyPaymentStarting, onStartPayment, onCompleteSandboxPayment }: { order: OrderSummary; payment: PaymentSummary | null; isStartingPayment: boolean; isCompletingSandboxPayment: boolean; anyPaymentStarting: boolean; onStartPayment: (orderId: string) => void; onCompleteSandboxPayment: (paymentId: string, orderId: string) => void }) {
-  if (payment) {
-    const canCompleteSandboxPayment = payment.provider === "Sandbox" && payment.status === "PendingAuthorization";
-    return <section className="mt-4 border border-[var(--line)] bg-[#fbfcfa] p-3 text-sm"><div className="flex items-center justify-between gap-3"><div><p className="font-medium">Payment {shortId(payment.id)}</p><p className="mt-1 text-xs text-[var(--muted)]">{payment.provider ?? "Payment provider pending"} - {formatDate(payment.createdAtUtc)}</p></div><StatusBadge status={payment.status} /></div><div className="mt-3 flex justify-between gap-3"><span className="text-[var(--muted)]">Amount</span><span className="font-semibold">{money.format(payment.amount)} {payment.currency}</span></div>{payment.paymentActionExpiresAtUtc && isAwaitingProvider(payment.status) ? <p className="mt-2 text-xs text-[var(--muted)]">Provider action expires {formatDate(payment.paymentActionExpiresAtUtc)}. Order status changes only after provider confirmation.</p> : null}{payment.completedAtUtc ? <p className="mt-2 text-xs text-[var(--muted)]">Last confirmed {formatDate(payment.completedAtUtc)}.</p> : null}{payment.failureReason ? <p className="mt-2 text-xs font-medium text-[var(--danger)]">{payment.failureReason}</p> : null}{canCompleteSandboxPayment ? <button className="mt-3 inline-flex min-h-9 items-center gap-2 bg-[var(--accent)] px-3 py-1 text-sm font-semibold text-white hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:bg-[#8ba89b]" disabled={isCompletingSandboxPayment} onClick={() => onCompleteSandboxPayment(payment.id, order.id)} type="button">{isCompletingSandboxPayment ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : <CreditCard aria-hidden="true" size={16} />}{isCompletingSandboxPayment ? "Confirming sandbox payment" : "Complete sandbox payment"}</button> : null}</section>;
-  }
-
-  if (order.status !== "PendingPayment") return null;
-  return <section className="mt-4 border border-[#d8d6c5] bg-[#fbfaf2] p-3"><p className="text-sm text-[var(--muted)]">No payment action has been requested. Requesting one does not confirm payment.</p><button className="mt-3 inline-flex min-h-9 items-center gap-2 bg-[var(--accent)] px-3 py-1 text-sm font-semibold text-white hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:bg-[#8ba89b]" disabled={anyPaymentStarting} onClick={() => onStartPayment(order.id)} type="button">{isStartingPayment ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : <CreditCard aria-hidden="true" size={16} />}{isStartingPayment ? "Requesting processing" : "Request payment processing"}</button></section>;
-}
 function CancellationAction({ order, isCancelling, isConfirmationOpen, onCancelOrder, onToggleConfirmation }: { order: OrderSummary; isCancelling: boolean; isConfirmationOpen: boolean; onCancelOrder: (orderId: string) => void; onToggleConfirmation: (orderId: string) => void }) {
   if (order.status !== "Pending" && order.status !== "PendingPayment") return null;
 

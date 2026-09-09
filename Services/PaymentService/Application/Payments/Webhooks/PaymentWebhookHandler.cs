@@ -54,16 +54,26 @@ public sealed class PaymentWebhookHandler : IRequestHandler<PaymentWebhookComman
             throw new UnauthorizedAccessException("Webhook signature verification failed.");
         }
 
-        var result = await _repository.ApplyAsync(
-            providerEventId,
-            request.PaymentId,
-            request.ProviderTransactionId,
-            status,
-            request.FailureReason,
-            request.PayloadHash,
-            request.SignatureStatus,
-            DateTime.UtcNow,
-            cancellationToken);
+        var result = request.IsProviderAutoCapture && status == PaymentStatus.Captured
+            ? await _repository.ApplyVerifiedAutoCaptureAsync(
+                providerEventId,
+                request.PaymentId,
+                request.ProviderTransactionId,
+                request.FailureReason,
+                request.PayloadHash,
+                request.SignatureStatus,
+                DateTime.UtcNow,
+                cancellationToken)
+            : await _repository.ApplyAsync(
+                providerEventId,
+                request.PaymentId,
+                request.ProviderTransactionId,
+                status,
+                request.FailureReason,
+                request.PayloadHash,
+                request.SignatureStatus,
+                DateTime.UtcNow,
+                cancellationToken);
 
         if (result.Payment is not null &&
             _operationalActions is not null &&

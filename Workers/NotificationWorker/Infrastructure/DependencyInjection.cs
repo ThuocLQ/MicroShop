@@ -8,6 +8,8 @@ using NotificationWorker.Infrastructure.Identity;
 using NotificationWorker.Infrastructure.Messaging;
 using NotificationWorker.Infrastructure.Notifications;
 using NotificationWorker.Infrastructure.Persistence;
+using NotificationWorker.Infrastructure.Realtime;
+using NotificationWorker.Application.Realtime;
 
 namespace NotificationWorker.Infrastructure;
 
@@ -51,6 +53,7 @@ public static class DependencyInjection
 
         services.AddSingleton<IDatabaseInitializer, PostgresDatabaseInitializer>();
         services.AddSingleton<INotificationDeliveryStore, PostgresNotificationDeliveryStore>();
+        services.AddSingleton<ICustomerRealtimeNotifier, CustomerRealtimeNotifier>();
         services.AddPostgresReadinessCheck(configuration, "NotificationDb");
         services.AddRabbitMqReadinessCheck(configuration);
 

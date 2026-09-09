@@ -17,7 +17,7 @@ public sealed class DapperPaymentWebhookRepository : IPaymentWebhookRepository
         _connectionFactory = connectionFactory;
     }
 
-    public async Task<PaymentWebhookApplyResult> ApplyAsync(
+    public Task<PaymentWebhookApplyResult> ApplyAsync(
         string providerEventId,
         Guid paymentId,
         string providerTransactionId,
@@ -26,7 +26,51 @@ public sealed class DapperPaymentWebhookRepository : IPaymentWebhookRepository
         string payloadHash,
         string signatureStatus,
         DateTime receivedAtUtc,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ApplyCoreAsync(
+            providerEventId,
+            paymentId,
+            providerTransactionId,
+            status,
+            failureReason,
+            payloadHash,
+            signatureStatus,
+            receivedAtUtc,
+            allowProviderAutoCapture: false,
+            cancellationToken);
+
+    public Task<PaymentWebhookApplyResult> ApplyVerifiedAutoCaptureAsync(
+        string providerEventId,
+        Guid paymentId,
+        string providerTransactionId,
+        string? failureReason,
+        string payloadHash,
+        string signatureStatus,
+        DateTime receivedAtUtc,
+        CancellationToken cancellationToken = default) =>
+        ApplyCoreAsync(
+            providerEventId,
+            paymentId,
+            providerTransactionId,
+            PaymentStatus.Captured,
+            failureReason,
+            payloadHash,
+            signatureStatus,
+            receivedAtUtc,
+            allowProviderAutoCapture: true,
+            cancellationToken);
+
+    private async Task<PaymentWebhookApplyResult> ApplyCoreAsync(
+        string providerEventId,
+        Guid paymentId,
+        string providerTransactionId,
+        PaymentStatus status,
+        string? failureReason,
+        string payloadHash,
+        string signatureStatus,
+        DateTime receivedAtUtc,
+        bool allowProviderAutoCapture,
+        CancellationToken cancellationToken)
     {
         using var connection = _connectionFactory.CreateConnection();
         connection.Open();
@@ -113,7 +157,8 @@ public sealed class DapperPaymentWebhookRepository : IPaymentWebhookRepository
                 status,
                 normalizedProviderTransactionId,
                 failureReason,
-                receivedAtUtc);
+                receivedAtUtc,
+                allowProviderAutoCapture);
 
             if (payment.Status != statusBeforeWebhook)
             {
@@ -535,7 +580,8 @@ public sealed class DapperPaymentWebhookRepository : IPaymentWebhookRepository
         PaymentStatus status,
         string providerTransactionId,
         string? failureReason,
-        DateTime occurredAtUtc)
+        DateTime occurredAtUtc,
+        bool allowProviderAutoCapture)
     {
         switch (status)
         {
@@ -543,7 +589,7 @@ public sealed class DapperPaymentWebhookRepository : IPaymentWebhookRepository
                 payment.MarkAuthorized(providerTransactionId, occurredAtUtc);
                 break;
             case PaymentStatus.Captured:
-                payment.MarkCaptured(providerTransactionId, occurredAtUtc);
+                payment.MarkCaptured(providerTransactionId, occurredAtUtc, allowProviderAutoCapture);
                 break;
             case PaymentStatus.Voided:
                 payment.MarkVoided(occurredAtUtc);

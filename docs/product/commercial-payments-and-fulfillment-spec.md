@@ -7,9 +7,9 @@
 
 ## 1. Outcome
 
-Enable a Vietnamese commercial checkout with real, server-confirmed payment and carrier-managed delivery while preserving the current ownership boundaries:
+Enable a commercial checkout with real, server-confirmed payment and carrier-managed delivery while preserving the current ownership boundaries:
 
-- **MoMo** is a hosted/redirect wallet payment. Its IPN callback is authoritative.
+- **PayPal** is an international hosted checkout. A verified PayPal lifecycle webhook is authoritative; a browser return is not.
 - **SePay** is a bank-transfer/QR reconciliation method. A matched inbound transaction webhook is authoritative.
 - **Giao Hang Tiet Kiem (GHTK)** creates and tracks a parcel after the order reaches the permitted fulfilment state.
 
@@ -19,8 +19,8 @@ Portfolio and Development continue to use `Sandbox`. A real provider is never si
 
 ### In scope
 
-1. Customer selects Sandbox, MoMo, or SePay only when that method is enabled for the environment and order currency is VND.
-2. PaymentService creates MoMo payment actions, verifies signed MoMo IPN callbacks, and drives the existing payment/order saga through the transactional outbox.
+1. Customer selects Sandbox, PayPal, or SePay only when that method is enabled for the environment and supports the immutable order currency.
+2. PaymentService creates PayPal orders server-to-server, redirects only to a PayPal approval URL, verifies PayPal webhook signatures through PayPal's verification API, and drives the existing payment/order saga through the transactional outbox.
 3. PaymentService creates a unique bank-transfer reference for SePay, returns a server-created QR/payment instruction, verifies SePay webhook authentication, and matches one inbound transaction to one payable payment.
 4. OrderingService creates a GHTK shipment request from an eligible paid order, records the carrier label/tracking/fee snapshot, and applies carrier status updates idempotently.
 5. Operations can see payment and shipment reconciliation failures; they cannot overwrite provider or carrier state with generic CRUD.
@@ -38,7 +38,7 @@ Portfolio and Development continue to use `Sandbox`. A real provider is never si
 | Owner | Responsibility | Must not own |
 | --- | --- | --- |
 | OrderingService | Order amount/address snapshots, fulfilment policy, shipment aggregate, GHTK request orchestration | Provider transaction lifecycle, raw provider credentials |
-| PaymentService | Payment intent, MoMo/SePay provider adapters, webhook/inbox/outbox/reconciliation | Order status direct mutation |
+| PaymentService | Payment intent, PayPal/SePay provider adapters, webhook/inbox/outbox/reconciliation | Order status direct mutation |
 | IdentityService | Customer identity and owned delivery address | Carrier address normalization or shipment status |
 | Storefront BFF | Session-bound presentation of server DTOs | Payment confirmation, signing, provider secrets |
 | GHTK adapter | Carrier request/response/status mapping | Order business transition policy |
@@ -49,26 +49,31 @@ No new `ShippingService` is introduced in this phase. Extract one only when carr
 
 ### Common rules
 
-- Currency is `VND`; amount is an integer VND value at the provider boundary. The authoritative decimal order/payment amount must have no fractional VND before an action is created.
+- The order currency and amount snapshot are authoritative. The browser never supplies an amount or performs FX conversion.
+- **SePay lane:** `VND` only, as a whole-VND integer. Fractional, partial, excess, or ambiguous transfers do not settle a payment automatically.
+- **PayPal lane:** only a currency explicitly supported by the PayPal Checkout API and enabled for the merchant account. `VND` must not be sent to the current PayPal Checkout adapter. The initial Sandbox evidence uses the existing `USD` order currency; live merchant settlement currency is a ready-gate decision.
+- A future VND storefront that also offers PayPal requires a separate server-side pricing/FX-quote capability, a quoted-rate snapshot, and finance approval. It is not part of this release.
 - A customer may start an enabled method only for an owned order in a payable state and before its payment deadline.
 - The provider-facing order/reference value is deterministic, bounded, opaque to customers, and unique. It never contains PII.
 - `PaymentId`, provider event id, provider transaction id, payload hash, correlation id, and order id are persisted/audited as appropriate. Raw secrets, access keys, card data, and full unredacted provider payloads are not logged.
 - Every inbound notification is authenticated before applying state. Duplicate notifications return a provider-compatible success response without duplicate side effects.
 - Unknown, mismatched amount/currency/reference, late, or invalid state notifications are persisted for reconciliation and do not mark an order paid.
 
-### MoMo
+### PayPal
 
-1. `MoMoPaymentProvider` creates a server-to-server payment request using a configured endpoint and HMAC-SHA256 signature.
-2. The client receives only the provider action URL and an opaque payment id; `redirectUrl` is a user-experience return, while `ipnUrl` is the authoritative result path.
-3. IPN validation checks the exact signature canonicalization required by the enabled MoMo API, partner code, order/request identity, amount, result code, and replay identity.
-4. The initial release uses the product/payment method agreed with the merchant account. Capture/void/refund capability is enabled only where that MoMo product supports it; unsupported operations enter a visible manual reconciliation workflow rather than faking provider success.
+1. `PayPalPaymentProvider` creates an order server-to-server from the immutable PaymentService snapshot. It sends a deterministic `PayPal-Request-Id`, stores the PayPal order/session id, and returns only the HTTPS approval action and opaque payment id to the browser.
+2. Return and cancel URLs are customer-experience routes only. The payment state is refreshed from PaymentService; neither a query parameter nor a client-side approval signal can mark an order paid.
+3. `/webhooks/paypal` verifies the PayPal transmission headers against PayPal's `verify-webhook-signature` endpoint using the configured webhook id. It deduplicates by PayPal event id, records the payload hash, resolves the persisted payment, and validates provider transaction identity before changing state.
+4. The initial event set is explicit: authorization created, capture completed, authorization voided, capture refunded, and authorization/capture denied. Unsupported events are retained as audit records without changing payment state.
+5. PayPal Sandbox is the first external test target. Live enablement additionally requires a merchant-approved production app, live webhook, public HTTPS callback routes, currency/settlement confirmation, reconciliation owner, and a controlled canary. No SDK secret is exposed to Storefront.
 
 ### SePay
 
 1. `SePayPaymentProvider` creates a payment instruction with a unique transfer code tied to one payment. QR rendering is derived from server-issued bank account/reference/amount data only.
-2. The SePay webhook accepts inbound credits only. It validates the configured authentication method and deduplicates by SePay transaction `id`.
-3. A transaction matches only when the configured receiving account, transfer direction, transfer code/reference, exact VND amount, and payment state are valid. Partial, overpaid, ambiguous, or unmatched transfers become reconciliation cases.
+2. The SePay webhook accepts inbound credits only. Production uses the official HMAC-SHA256 request signature with timestamp validation; API-key-only and unauthenticated modes are not accepted for this service. It deduplicates by SePay transaction `id` and records a payload hash conflict separately.
+3. A transaction matches only when the configured receiving account, inbound direction, transfer code/reference, exact VND amount, and payable payment state are valid. Partial, overpaid, ambiguous, or unmatched transfers become reconciliation cases and receive no automatic state transition.
 4. The initial release does not initiate a debit through SePay and does not infer payment from a customer-uploaded receipt.
+5. A valid-but-unmatched transaction is durably recorded and acknowledged with the provider-compatible response to avoid a retry storm. Invalid authentication is rejected. SePay delivery/replay logs are an operations aid, not a replacement for local idempotency.
 
 ## 5. Fulfilment And GHTK Policy
 
@@ -84,7 +89,7 @@ No new `ShippingService` is introduced in this phase. Extract one only when carr
 ### Public/BFF APIs
 
 - `GET /payments/providers`: enabled customer-visible provider descriptors only.
-- `POST /orders/{orderId}/payments`: existing create flow gains `provider = Momo | SePay | Sandbox` with a stable action DTO.
+- `POST /orders/{orderId}/payments`: existing create flow gains `provider = PayPal | SePay | Sandbox` with a stable action DTO. A provider unavailable for that order currency returns a controlled validation response.
 - `GET /payments/{paymentId}` and owned order detail expose state, action expiry, next permitted action, and sanitized reconciliation state.
 - `GET /orders/{orderId}/shipment`: owned tracking projection, never raw carrier payload.
 
@@ -118,7 +123,7 @@ No new `ShippingService` is introduced in this phase. Extract one only when carr
 | Slice | Scope | Exit evidence |
 | --- | --- | --- |
 | C1 - Provider framework | Multi-provider config, feature flags, provider capability model, secret validation, shared webhook hardening | Unit/integration tests; Sandbox unchanged; disabled real providers cannot be selected |
-| C2 - MoMo sandbox | Create redirect action + signed IPN verifier + dedup/reconciliation | MoMo sandbox happy, invalid signature, duplicate, amount mismatch, late callback and outage tests |
+| C2 - PayPal sandbox | Create hosted approval action + verified lifecycle webhook + dedup/reconciliation | PayPal Sandbox approval/authorization/capture flow, invalid signature, duplicate event, amount/currency mismatch, late callback, dashboard resend, and outage tests |
 | C3 - SePay test mode | Bank-transfer instruction/QR + authenticated transaction webhook + exact matching | SePay test-mode inbound credit, duplicate id, wrong account/code/amount, retry and reconciliation tests |
 | C4 - GHTK staging | Shipment submission/reconciliation + status mapping + tracking read model | GHTK staging create/idempotent duplicate/status update/error tests; shipment audit visible |
 | C5 - Storefront/Operations | Provider selection, payment return/pending states, tracking and reconciliation queues | Browser E2E desktop/mobile; no secret/raw payload in UI |
@@ -128,11 +133,25 @@ No new `ShippingService` is introduced in this phase. Extract one only when carr
 
 Implementation can start with C1 immediately. Enabling C2-C4 beyond test/staging needs:
 
-1. MoMo merchant product selection, sandbox credentials, production credentials, allowed redirect/IPN domains, and confirmation of capture/void/refund capabilities.
-2. SePay account/VA model, test-mode or production token, receiving account identifiers, webhook authentication method, payment code policy, and settlement/reconciliation owner.
+1. PayPal Developer sandbox business and buyer accounts, Sandbox client id/secret, webhook id, allowed return/cancel/webhook HTTPS domains, exact enabled event types, and confirmation of authorization/capture/void/refund behaviour. Live credentials are a separate merchant approval step.
+2. SePay account/VA model, linked receiving bank account, test-mode or production credentials, receiving account identifiers, HMAC webhook configuration, payment-code policy, and settlement/reconciliation owner.
 3. GHTK merchant account, staging/production token, partner code, warehouse/pickup and return address, service coverage, webhook arrangement, COD policy, and carrier support escalation contact.
 4. Legal/finance decisions: invoice/tax policy, refund approval authority, bank transfer overpayment/underpayment policy, notification content, support SLA, and privacy retention.
 
 ## 11. Definition Of Done
 
 No real method is labelled production-ready until its configured environment passes provider sandbox/staging tests, duplicate/invalid/late/outage drills, observability checks, browser E2E, security review, reconciliation runbook, and release evidence required by `docs/governance/quality-gates.md`.
+
+## 12. Provider Decision Record
+
+- **Selected commercial providers:** PayPal for international hosted checkout and SePay for Vietnamese VND bank-transfer/QR settlement.
+- **MoMo:** an existing disabled adapter remains outside this commercial release path. It is neither enabled nor represented as a verified integration; removing it is a separate, compatibility-reviewed cleanup.
+- **Current external-integration classification:** Sandbox is a local simulation; PayPal is code-ready and becomes sandbox-verified only after the documented Sandbox tests; SePay is planned and becomes code-ready only after its adapter exists and merchant onboarding is complete; GHTK remains blocked on merchant staging access.
+- Official-provider contracts take precedence over community samples. Community repositories may inform implementation ergonomics, but no community code is copied into the payment boundary without security and license review.
+
+## 13. Primary Provider References
+
+- PayPal: [Sandbox testing](https://developer.paypal.com/sandbox-testing/overview/), [standard Checkout integration](https://developer.paypal.com/platforms/checkout/standard/integrate), [webhook verification](https://developer.paypal.com/api/rest/webhooks/rest/), and [Checkout currency codes](https://developer.paypal.com/reference/currency-codes/).
+- SePay: [Webhook overview](https://developer.sepay.vn/en/sepay-webhooks) and [OAuth/webhook authentication](https://developer.sepay.vn/en/sepay-oauth2/api-webhook).
+
+These sources must be rechecked at implementation time because provider contracts, merchant availability, and onboarding rules may change.

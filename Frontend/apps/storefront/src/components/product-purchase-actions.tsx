@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, ShoppingBag } from "lucide-react";
+import { Heart, LoaderCircle, ShoppingBag } from "lucide-react";
 import { useState } from "react";
 import { AuthDialog } from "@/components/auth-dialog";
 import { problemMessage } from "@/lib/http/problem-details";
@@ -12,6 +12,7 @@ type Feedback = { tone: "error" | "success"; text: string };
 export function ProductPurchaseActions({ product }: { product: CatalogProduct }) {
   const [isWorking, setIsWorking] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   async function addToCart(userId?: string) {
@@ -53,6 +54,22 @@ export function ProductPurchaseActions({ product }: { product: CatalogProduct })
     }
   }
 
+  async function saveItem() {
+    setIsSaving(true);
+    setFeedback(null);
+    try {
+      const sessionResponse = await fetch("/api/session", { headers: { Accept: "application/json" } });
+      const sessionPayload: unknown = await sessionResponse.json().catch(() => null);
+      if (!sessionUserId(sessionPayload)) { setIsAuthOpen(true); return; }
+      const response = await fetch("/api/saved-items", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ productId: product.id }) });
+      const payload: unknown = await response.json().catch(() => null);
+      if (response.status === 401) { setIsAuthOpen(true); return; }
+      if (!response.ok && response.status !== 204) throw new Error(messageOf(payload) ?? "This product could not be saved.");
+      setFeedback({ tone: "success", text: "Saved to your account. You can manage it from Account." });
+    } catch (error) {
+      setFeedback({ tone: "error", text: error instanceof Error ? error.message : "This product could not be saved." });
+    } finally { setIsSaving(false); }
+  }
   function handleSignedIn(user: CurrentUser) {
     setIsAuthOpen(false);
     void addToCart(user.userId);
@@ -63,10 +80,12 @@ export function ProductPurchaseActions({ product }: { product: CatalogProduct })
   }
 
   return <div className="space-y-3">
-    <button className="store-primary-button w-full disabled:cursor-not-allowed disabled:bg-[#8ba89b] sm:w-auto" disabled={isWorking} onClick={() => void addToCart()} type="button">
+    <div className="flex flex-wrap gap-3"><button className="store-primary-button disabled:cursor-not-allowed disabled:bg-[#8ba89b]" disabled={isWorking} onClick={() => void addToCart()} type="button">
       {isWorking ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} /> : <ShoppingBag aria-hidden="true" size={17} />}
       {isWorking ? "Adding to cart" : "Add to cart"}
     </button>
+    <button className="store-secondary-button" disabled={isSaving} onClick={() => void saveItem()} type="button">{isSaving ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} /> : <Heart aria-hidden="true" size={17} />}{isSaving ? "Saving" : "Save"}</button>
+    </div>
     {feedback ? <p className={feedback.tone === "success" ? "border-l-2 border-[var(--accent)] bg-[#f4fbf6] px-3 py-2 text-sm text-[var(--accent-strong)]" : "border-l-2 border-[var(--danger)] bg-[#fff7f6] px-3 py-2 text-sm text-[var(--danger)]"} role={feedback.tone === "success" ? "status" : "alert"}>{feedback.text}</p> : null}
     <AuthDialog notice="Sign in to add products to your cart." onClose={() => setIsAuthOpen(false)} onSignedIn={handleSignedIn} open={isAuthOpen} />
   </div>;

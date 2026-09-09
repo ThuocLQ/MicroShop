@@ -1,7 +1,9 @@
 using MediatR;
 using System.Security.Cryptography;
 using System.Text;
+using BuildingBlocks.Contracts.Events.Payments;
 using PaymentService.Application.Abstractions;
+using PaymentService.Application.Outbox;
 using PaymentService.Application.Payments.Providers;
 using PaymentService.Domain.Payments;
 
@@ -12,15 +14,21 @@ public sealed class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand,
     private readonly IPaymentRepository _repository;
     private readonly IOrderPaymentClient _orderClient;
     private readonly IPaymentProviderResolver _providers;
+    private readonly IPaymentUnitOfWork _unitOfWork;
+    private readonly IPaymentOutboxRepository _outbox;
 
     public CreatePaymentHandler(
         IPaymentRepository repository,
         IOrderPaymentClient orderClient,
-        IPaymentProviderResolver providers)
+        IPaymentProviderResolver providers,
+        IPaymentUnitOfWork unitOfWork,
+        IPaymentOutboxRepository outbox)
     {
         _repository = repository;
         _orderClient = orderClient;
         _providers = providers;
+        _unitOfWork = unitOfWork;
+        _outbox = outbox;
     }
 
     public async Task<CreatePaymentResult> Handle(CreatePaymentCommand request, CancellationToken cancellationToken)
@@ -45,7 +53,11 @@ public sealed class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand,
             throw new PaymentOrderNotAccessibleException(request.OrderId);
         }
 
-        PaymentProviderPolicy.EnsureActionIsSupported(paymentProvider.Name, order.TotalAmount, order.Currency);
+        PaymentProviderPolicy.EnsureActionIsSupported(
+            paymentProvider.Name,
+            order.TotalAmount,
+            order.Currency,
+            paymentProvider.SupportedCurrencies);
         var requestHash = ComputeIntentHash(order.OrderId, order.CustomerId, order.TotalAmount, order.Currency, paymentProvider.Name);
         var replay = await _repository.GetByCustomerAndActionIdempotencyKeyAsync(
             request.CustomerId,
@@ -82,7 +94,7 @@ public sealed class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand,
             order.CustomerId,
             order.TotalAmount,
             order.Currency,
-            PaymentStatus.PendingAuthorization,
+            action.InitialPaymentStatus,
             DateTime.UtcNow,
             provider: action.Provider,
             providerSessionId: action.SessionId,
@@ -91,10 +103,33 @@ public sealed class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand,
             paymentActionExpiresAtUtc: action.ExpiresAtUtc,
             providerCheckoutUrl: action.CheckoutUrl);
 
-        var createdPayment = await _repository.CreateAsync(payment, cancellationToken);
+        var createdPayment = action.InitialPaymentStatus == PaymentStatus.AwaitingCollection
+            ? await CreateCashOnDeliveryPaymentAsync(payment, cancellationToken)
+            : await _repository.CreateAsync(payment, cancellationToken);
 
         EnsureSameIntent(createdPayment, request.OrderId, requestHash, paymentProvider.Name, idempotencyKey);
         return ToResult(createdPayment, isReplay: createdPayment.Id != payment.Id);
+    }
+
+    private Task<Payment> CreateCashOnDeliveryPaymentAsync(Payment payment, CancellationToken cancellationToken)
+    {
+        return _unitOfWork.ExecuteAsync(async transaction =>
+        {
+            var created = await _repository.CreateAsync(payment, transaction, cancellationToken);
+            await _outbox.AddAsync(PaymentOutboxMessageFactory.Create(new PaymentCollectionPendingIntegrationEvent
+            {
+                PaymentId = created.Id,
+                OrderId = created.OrderId,
+                CustomerId = created.CustomerId,
+                Amount = created.Amount,
+                Currency = created.Currency,
+                ProviderTransactionId = created.ProviderSessionId ?? string.Empty,
+                CorrelationId = created.OrderId.ToString("N"),
+                CausationId = created.Id.ToString("D")
+            }), transaction, cancellationToken);
+
+            return created;
+        }, cancellationToken);
     }
 
     private static CreatePaymentResult ToResult(Payment payment, bool isReplay)
@@ -114,7 +149,8 @@ public sealed class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand,
                 payment.ProviderCheckoutUrl,
                 payment.Status.ToString(),
                 payment.PaymentActionExpiresAtUtc.Value,
-                string.Equals(payment.Provider, "Sandbox", StringComparison.OrdinalIgnoreCase)),
+                string.Equals(payment.Provider, "Sandbox", StringComparison.OrdinalIgnoreCase),
+                string.Equals(payment.Provider, "CashOnDelivery", StringComparison.OrdinalIgnoreCase)),
             isReplay);
     }
 

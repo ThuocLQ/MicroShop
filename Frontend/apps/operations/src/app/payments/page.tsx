@@ -64,7 +64,8 @@ export default function PaymentsPage() {
   }, []);
 
   useEffect(() => {
-    void load();
+    const timerId = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timerId);
   }, [load]);
 
   const summary = useMemo(() => ({

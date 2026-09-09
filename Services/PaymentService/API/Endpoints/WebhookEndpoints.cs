@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using MicroShop.ServiceDefaults.Diagnostics;
 using PaymentService.API;
@@ -76,8 +77,26 @@ public static class WebhookEndpoints
             return rawBody.Error;
         }
 
-        var result = await processor.ProcessAsync(httpRequest.Headers, rawBody.Value!, cancellationToken);
-        return result.Payment is null ? Results.NoContent() : Results.Ok(result.Payment);
+        try
+        {
+            var result = await processor.ProcessAsync(httpRequest.Headers, rawBody.Value!, cancellationToken);
+            return result.Payment is null ? Results.NoContent() : Results.Ok(result.Payment);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status401Unauthorized,
+                title: "Unauthorized payment provider webhook",
+                type: "https://microshop.dev/problems/paypal-webhook-unauthorized");
+        }
+        catch (ArgumentException exception)
+        {
+            return ApiProblemResults.BadRequest(exception.Message, "PAYPAL_WEBHOOK_INVALID");
+        }
+        catch (JsonException)
+        {
+            return ApiProblemResults.BadRequest("The payment provider webhook body is invalid.", "PAYPAL_WEBHOOK_INVALID");
+        }
     }
 
     private static async Task<IResult> HandleMoMoWebhookAsync(

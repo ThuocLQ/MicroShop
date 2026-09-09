@@ -28,33 +28,46 @@ public sealed class CreateShipmentHandler(
                 return ShipmentMapper.ToDto(existingShipment);
             }
 
-            if (order.Status != OrderStatus.Paid)
+            var wasPaidBeforeFulfillment = order.Status == OrderStatus.Paid;
+            if (order.Status is not (OrderStatus.Paid or OrderStatus.Confirmed))
             {
-                throw new InvalidOperationException("Only paid orders can enter fulfillment.");
+                throw new InvalidOperationException("Only paid orders or confirmed cash-on-delivery orders can enter fulfillment.");
+            }
+
+            if (wasPaidBeforeFulfillment)
+            {
+                if (!order.MoveToFulfillmentStatus(OrderStatus.Confirmed) ||
+                    !await orders.TryUpdateStatusAsync(order.Id, order.Status, [OrderStatus.Paid], transaction, cancellationToken))
+                {
+                    throw new InvalidOperationException("Order changed before shipment creation.");
+                }
             }
 
             var shipment = Shipment.Create(order.Id, DateTime.UtcNow);
-            if (!order.MoveToFulfillmentStatus(OrderStatus.Confirmed))
-            {
-                throw new InvalidOperationException("Order could not enter fulfillment.");
-            }
-
-            if (!await orders.TryUpdateStatusAsync(order.Id, order.Status, [OrderStatus.Paid], transaction, cancellationToken))
-            {
-                throw new InvalidOperationException("Order changed before shipment creation.");
-            }
-
             await shipments.CreateAsync(shipment, transaction, cancellationToken);
-            await outbox.AddAsync(
-                OutboxMessageFactory.Create(OrderIntegrationEventFactory.CreateOrderStatusChanged(order, OrderStatus.Paid)),
-                transaction,
-                cancellationToken);
-            await outbox.AddAsync(
-                OutboxMessageFactory.CreateKafka(OrderIntegrationEventFactory.CreateOrderProjectionStatusChanged(order, OrderStatus.Paid)),
-                transaction,
-                cancellationToken);
+
+            if (wasPaidBeforeFulfillment)
+            {
+                await outbox.AddAsync(
+                    OutboxMessageFactory.Create(OrderIntegrationEventFactory.CreateOrderStatusChanged(order, OrderStatus.Paid)),
+                    transaction,
+                    cancellationToken);
+                await outbox.AddAsync(
+                    OutboxMessageFactory.CreateKafka(OrderIntegrationEventFactory.CreateOrderProjectionStatusChanged(order, OrderStatus.Paid)),
+                    transaction,
+                    cancellationToken);
+            }
+
             await shipments.AddHistoryAsync(
-                ShipmentStatusHistory.Create(shipment.Id, null, shipment.Status, request.ActorId, "Shipment created for a paid order.", DateTime.UtcNow),
+                ShipmentStatusHistory.Create(
+                    shipment.Id,
+                    null,
+                    shipment.Status,
+                    request.ActorId,
+                    wasPaidBeforeFulfillment
+                        ? "Shipment created for a paid order."
+                        : "Shipment created for a confirmed cash-on-delivery order.",
+                    DateTime.UtcNow),
                 transaction,
                 cancellationToken);
 

@@ -22,8 +22,28 @@ public sealed class PaymentProviderPolicyTests
     }
 
     [Fact]
-    public void Sandbox_DoesNotInheritVietnameseProviderRestrictions()
+    public void Sandbox_AcceptsAnyCurrency()
     {
         PaymentProviderPolicy.EnsureActionIsSupported("Sandbox", 12.34m, "USD");
+        PaymentProviderPolicy.EnsureActionIsSupported("Sandbox", 125_000m, "VND");
+        Assert.Equal([PaymentProviderPolicy.AnyCurrency], PaymentProviderPolicy.GetSupportedCurrencies("Sandbox"));
+    }
+
+    [Fact]
+    public void PayPal_UsesAnExplicitConfiguredCurrencyAllowList()
+    {
+        var currencies = PaymentProviderPolicy.GetConfiguredPayPalCurrencies(["usd", "THB"]);
+
+        Assert.Equal(["USD", "THB"], currencies);
+        PaymentProviderPolicy.EnsureActionIsSupported("PayPal", 12.34m, "USD", currencies);
+        Assert.Throws<InvalidOperationException>(() =>
+            PaymentProviderPolicy.EnsureActionIsSupported("PayPal", 125_000m, "VND", currencies));
+    }
+
+    [Fact]
+    public void PayPal_RejectsAConfiguredCurrencyOutsideCheckoutSupport()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            PaymentProviderPolicy.GetConfiguredPayPalCurrencies(["VND"]));
     }
 }

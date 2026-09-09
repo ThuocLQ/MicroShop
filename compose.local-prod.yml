@@ -239,7 +239,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Docker
       ASPNETCORE_HTTP_PORTS: 8080
-      ConnectionStrings__CatalogDb: Host=postgres;Port=5432;Database=catalogdb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod}
+      ConnectionStrings__CatalogDb: Host=postgres;Port=5432;Database=catalogdb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod};GSS Encryption Mode=Disable
       Jwt__Issuer: MicroShop.IdentityService
       Jwt__Audience: MicroShop.Client
       Jwt__SecretKey: ${MICROSHOP_JWT_SECRET_KEY:?Set MICROSHOP_JWT_SECRET_KEY in .env.local-prod}
@@ -271,7 +271,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Docker
       ASPNETCORE_HTTP_PORTS: 8080
-      ConnectionStrings__InventoryDb: Host=postgres;Port=5432;Database=inventorydb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod}
+      ConnectionStrings__InventoryDb: Host=postgres;Port=5432;Database=inventorydb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod};GSS Encryption Mode=Disable
       InternalApi__Key: ${MICROSHOP_INTERNAL_API_KEY:?Set MICROSHOP_INTERNAL_API_KEY in .env.local-prod}
       Jwt__Issuer: MicroShop.IdentityService
       Jwt__Audience: MicroShop.Client
@@ -327,7 +327,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Docker
       ASPNETCORE_HTTP_PORTS: 8080
-      ConnectionStrings__OrderingDb: Host=postgres;Port=5432;Database=orderingdb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod}
+      ConnectionStrings__OrderingDb: Host=postgres;Port=5432;Database=orderingdb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod};GSS Encryption Mode=Disable
       ServiceUrls__BasketHttp: http://basketservice:8080
       ServiceUrls__CatalogHttp: http://catalogservice:8080
       ServiceUrls__DiscountHttp: http://discountservice:8080
@@ -373,7 +373,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Docker
       ASPNETCORE_HTTP_PORTS: 8080
-      ConnectionStrings__DiscountDb: Host=postgres;Port=5432;Database=discountdb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod}
+      ConnectionStrings__DiscountDb: Host=postgres;Port=5432;Database=discountdb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod};GSS Encryption Mode=Disable
       InternalApi__Key: ${MICROSHOP_INTERNAL_API_KEY:?Set MICROSHOP_INTERNAL_API_KEY in .env.local-prod}
       RabbitMq__Host: rabbitmq
       RabbitMq__VirtualHost: /
@@ -408,7 +408,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Docker
       ASPNETCORE_HTTP_PORTS: 8080
-      ConnectionStrings__IdentityDb: Host=postgres;Port=5432;Database=identitydb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod}
+      ConnectionStrings__IdentityDb: Host=postgres;Port=5432;Database=identitydb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod};GSS Encryption Mode=Disable
       Jwt__Issuer: MicroShop.IdentityService
       Jwt__Audience: MicroShop.Client
       Jwt__SecretKey: ${MICROSHOP_JWT_SECRET_KEY:?Set MICROSHOP_JWT_SECRET_KEY in .env.local-prod}
@@ -429,6 +429,17 @@ services:
       postgres:
         condition: service_healthy
 
+  payment-data-protection-init:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0
+    user: "0:0"
+    restart: "no"
+    command: >
+      sh -ec 'mkdir -p /home/app/.aspnet/DataProtection-Keys &&
+      chown -R 1654:1654 /home/app/.aspnet/DataProtection-Keys'
+    volumes:
+      - payment_data_protection_keys:/home/app/.aspnet/DataProtection-Keys
+    networks:
+      - microshop-network
   paymentservice:
     <<: *web-service-runtime
     image: microshop/paymentservice:local-prod
@@ -441,7 +452,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Docker
       ASPNETCORE_HTTP_PORTS: 8080
-      ConnectionStrings__PaymentDb: Host=postgres;Port=5432;Database=paymentdb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod}
+      ConnectionStrings__PaymentDb: Host=postgres;Port=5432;Database=paymentdb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod};GSS Encryption Mode=Disable
       RabbitMq__Host: rabbitmq
       RabbitMq__VirtualHost: /
       RabbitMq__UserName: microshop
@@ -454,15 +465,22 @@ services:
       PaymentWebhooks__SignatureHeaderName: X-MicroShop-Signature
       PaymentWebhooks__SharedSecret: ${MICROSHOP_PAYMENT_WEBHOOK_SECRET:?Set MICROSHOP_PAYMENT_WEBHOOK_SECRET in .env.local-prod}
       PaymentWebhooks__RequireSignature: "true"
-      PaymentProvider__Provider: PayPal
-      PaymentProvider__PayPal__Enabled: "true"
+      PaymentProvider__Provider: ${MICROSHOP_PAYMENT_PROVIDER:-CashOnDelivery}
+      PaymentProvider__EnabledProviders__0: ${MICROSHOP_PAYMENT_PROVIDER:-CashOnDelivery}
+      PaymentProvider__AllowSandbox: ${MICROSHOP_ALLOW_SANDBOX_PAYMENT:-true}
+      PaymentProvider__PayPal__Enabled: ${MICROSHOP_PAYPAL_ENABLED:-false}
       PaymentProvider__PayPal__UseSandbox: "true"
+      PaymentProvider__PayPal__SupportedCurrencies__0: ${MICROSHOP_PAYPAL_CURRENCY:-USD}
       PaymentProvider__PayPal__ClientId: ${MICROSHOP_PAYPAL_CLIENT_ID:-SET_BY_ENVIRONMENT}
       PaymentProvider__PayPal__ClientSecret: ${MICROSHOP_PAYPAL_CLIENT_SECRET:-SET_BY_ENVIRONMENT}
       PaymentProvider__PayPal__WebhookId: ${MICROSHOP_PAYPAL_WEBHOOK_ID:-SET_BY_ENVIRONMENT}
       PaymentProvider__PayPal__ReturnUrl: ${MICROSHOP_PUBLIC_ORIGIN:-https://shop.invalid}/payment/return
       PaymentProvider__PayPal__CancelUrl: ${MICROSHOP_PUBLIC_ORIGIN:-https://shop.invalid}/payment/cancel
+    volumes:
+      - payment_data_protection_keys:/home/app/.aspnet/DataProtection-Keys
     depends_on:
+      payment-data-protection-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       rabbitmq:
@@ -531,7 +549,7 @@ services:
         condition: service_healthy
 
   notificationworker:
-    <<: *worker-runtime
+    <<: *web-service-runtime
     image: microshop/notificationworker:local-prod
     build:
       context: .
@@ -541,11 +559,16 @@ services:
         PROJECT_DLL: NotificationWorker.dll
     environment:
       DOTNET_ENVIRONMENT: Docker
+      ASPNETCORE_ENVIRONMENT: Docker
+      ASPNETCORE_HTTP_PORTS: 8080
+      Jwt__Issuer: MicroShop.IdentityService
+      Jwt__Audience: MicroShop.Client
+      Jwt__SecretKey: ${MICROSHOP_JWT_SECRET_KEY:?Set MICROSHOP_JWT_SECRET_KEY in .env.local-prod}
       RabbitMq__Host: rabbitmq
       RabbitMq__VirtualHost: /
       RabbitMq__UserName: microshop
       RabbitMq__Password: ${MICROSHOP_RABBITMQ_PASSWORD:?Set MICROSHOP_RABBITMQ_PASSWORD in .env.local-prod}
-      ConnectionStrings__NotificationDb: Host=postgres;Port=5432;Database=notificationdb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod}
+      ConnectionStrings__NotificationDb: Host=postgres;Port=5432;Database=notificationdb;Username=microshop;Password=${MICROSHOP_POSTGRES_PASSWORD:?Set MICROSHOP_POSTGRES_PASSWORD in .env.local-prod};GSS Encryption Mode=Disable
       NotificationDelivery__Mode: Smtp
       NotificationDelivery__Smtp__Host: mailpit
       NotificationDelivery__Smtp__Port: "1025"
@@ -625,7 +648,7 @@ services:
       supplierservice:
         condition: service_healthy
       notificationworker:
-        condition: service_started
+        condition: service_healthy
 
   storefront:
     <<: *web-service-runtime
@@ -681,6 +704,7 @@ volumes:
   kafka_data:
   mongodb_data:
   identity_data_protection_keys:
+  payment_data_protection_keys:
 
 networks:
   microshop-network:

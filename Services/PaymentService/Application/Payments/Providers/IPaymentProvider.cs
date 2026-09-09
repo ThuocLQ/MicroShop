@@ -5,6 +5,7 @@ namespace PaymentService.Application.Payments.Providers;
 public interface IPaymentProvider
 {
     string Name { get; }
+    IReadOnlyList<string> SupportedCurrencies { get; }
 
     Task<PaymentProviderAction> CreateActionAsync(
         PaymentProviderActionRequest request,
@@ -41,12 +42,14 @@ public sealed record PaymentProviderAction(
     string Provider,
     string SessionId,
     string? CheckoutUrl,
-    DateTime ExpiresAtUtc);
+    DateTime ExpiresAtUtc,
+    PaymentStatus InitialPaymentStatus = PaymentStatus.PendingAuthorization);
 
 public sealed record PaymentProviderDescriptor(
     string Name,
     bool IsSandbox,
     bool RequiresRedirect,
+    bool IsCashOnDelivery,
     IReadOnlyList<string> SupportedCurrencies);
 
 public sealed record PaymentProviderActionRequest(

@@ -11,4 +11,5 @@ public sealed record PaymentActionDto(
     string? CheckoutUrl,
     string PaymentStatus,
     DateTime ExpiresAtUtc,
-    bool SandboxCompletionAvailable);
+    bool SandboxCompletionAvailable,
+    bool CashOnDelivery);

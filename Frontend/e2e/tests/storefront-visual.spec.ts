@@ -79,3 +79,30 @@ test("cart is a keyboard dialog and address setup offers a country choice", asyn
   await expect(cartDialog).toBeHidden();
   await expect(cartTrigger).toBeFocused();
 });
+test("shared store header exposes discovery, cart, and sign-in without rendering a browser token", async ({ page }) => {
+  await page.goto("/products");
+  await expect(page.getByRole("navigation", { name: "Store navigation" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Search products" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Cart and checkout" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+});
+
+test("recently viewed products are resolved from the live Catalog contract", async ({ page }) => {
+  await page.goto("/products/fa9dde50-d2cf-4565-92ff-e8e19df76603");
+  await expect(page.getByRole("heading", { name: "Browser test desk lamp", level: 1 })).toBeVisible();
+  await page.goto("/products/c2986cc6-9f51-4cef-a5ee-8303cc7bf48c");
+  await expect(page.getByRole("heading", { name: "Recently viewed" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Browser test desk lamp/ })).toBeVisible();
+});
+test("hero copy remains clear of product media", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto("/");
+  const heading = page.getByRole("heading", { level: 1 });
+  const media = page.getByTestId("catalog-hero-media");
+  await expect(heading).toBeVisible();
+  await expect(media).toBeVisible();
+  const [headingBox, mediaBox] = await Promise.all([heading.boundingBox(), media.boundingBox()]);
+  expect(headingBox).not.toBeNull();
+  expect(mediaBox).not.toBeNull();
+  expect((headingBox?.y ?? 0) + (headingBox?.height ?? 0)).toBeLessThanOrEqual(mediaBox?.y ?? 0);
+});

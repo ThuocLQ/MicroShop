@@ -7,7 +7,7 @@ const browser = await chromium.launch({ headless: true });
 try {
   const desktop = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   await desktop.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await desktop.waitForTimeout(500);
+  await desktop.waitForFunction(() => document.querySelectorAll("[data-testid=product-card]").length > 0, undefined, { timeout: 15_000 });
   const cardLocator = desktop.locator("[data-testid=product-card]");
   const cardCount = await cardLocator.count();
   for (let index = 0; index < cardCount; index++) {
@@ -31,7 +31,14 @@ try {
       naturalWidth: image.naturalWidth,
     }));
 
+    const heroHeading = document.querySelector("[data-testid=catalog-hero] h1");
+    const heroMedia = document.querySelector("[data-testid=catalog-hero-media]");
+    const heroCopyOverlapsMedia = heroHeading instanceof HTMLElement && heroMedia instanceof HTMLElement
+      ? heroHeading.getBoundingClientRect().bottom > heroMedia.getBoundingClientRect().top
+      : true;
+
     return {
+      heroCopyOverlapsMedia,
       cards: cards.length,
       categories: document.querySelectorAll(".store-category-chip").length,
       fallbackCount: document.querySelectorAll("[data-testid=product-image-fallback]").length,
@@ -54,7 +61,7 @@ try {
   const result = { baseUrl, desktopCheck, mobileCheck };
   console.log(JSON.stringify(result, null, 2));
   const actionMisaligned = desktopCheck.rowActionDeltas.some((delta) => delta > 1);
-  if (desktopCheck.cards === 0 || desktopCheck.categories === 0 || desktopCheck.fallbackCount > 0 || desktopCheck.horizontalOverflow || desktopCheck.unloadedImages > 0 || actionMisaligned || !mobileCheck.categorySelectPresent || mobileCheck.horizontalOverflow) process.exitCode = 1;
+  if (desktopCheck.cards === 0 || desktopCheck.categories === 0 || desktopCheck.heroCopyOverlapsMedia || desktopCheck.fallbackCount > 0 || desktopCheck.horizontalOverflow || desktopCheck.unloadedImages > 0 || actionMisaligned || !mobileCheck.categorySelectPresent || mobileCheck.horizontalOverflow) process.exitCode = 1;
 } finally {
   await browser.close();
 }

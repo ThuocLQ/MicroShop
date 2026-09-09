@@ -148,6 +148,16 @@ public sealed class PaymentOutboxDispatcherBackgroundService : BackgroundService
         PaymentOutboxMessage message,
         CancellationToken cancellationToken)
     {
+        if (message.Type is nameof(PaymentCollectionPendingIntegrationEvent) ||
+            message.Type == typeof(PaymentCollectionPendingIntegrationEvent).FullName)
+        {
+            var integrationEvent = JsonSerializer.Deserialize<PaymentCollectionPendingIntegrationEvent>(message.Content, JsonOptions)
+                ?? throw new InvalidOperationException($"Cannot deserialize outbox message {message.Id} to {nameof(PaymentCollectionPendingIntegrationEvent)}.");
+
+            await sagaClient.ApplyPaymentCollectionPendingAsync(integrationEvent, cancellationToken);
+            return;
+        }
+
         if (message.Type is nameof(PaymentAuthorizedIntegrationEvent) ||
             message.Type == typeof(PaymentAuthorizedIntegrationEvent).FullName)
         {

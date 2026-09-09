@@ -1,0 +1,32 @@
+# Named Cloudflare Tunnel profile for a public portfolio hostname.
+# Combine with compose.local-prod.yml and compose.portfolio.yml only after
+# Cloudflare owns the delegated DNS zone and the exact HTTPS origin is known.
+services:
+  reverse-proxy:
+    volumes:
+      - ./docker/caddy/Caddyfile.public-portfolio:/etc/caddy/Caddyfile:ro
+
+  api-gateway:
+    environment:
+      Gateway__AllowedCorsOrigins__0: ${MICROSHOP_STOREFRONT_PUBLIC_ORIGIN:?Set MICROSHOP_STOREFRONT_PUBLIC_ORIGIN in .env.public-portfolio}
+
+  storefront:
+    environment:
+      MICROSHOP_PUBLIC_ORIGIN: ${MICROSHOP_STOREFRONT_PUBLIC_ORIGIN:?Set MICROSHOP_STOREFRONT_PUBLIC_ORIGIN in .env.public-portfolio}
+      MICROSHOP_COOKIE_SECURE: "true"
+
+  cloudflared:
+    image: ${MICROSHOP_CLOUDFLARED_IMAGE:?Set a pinned cloudflared image in .env.public-portfolio}
+    command: tunnel --no-autoupdate run --token ${MICROSHOP_CLOUDFLARE_TUNNEL_TOKEN:?Set MICROSHOP_CLOUDFLARE_TUNNEL_TOKEN in .env.public-portfolio}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      reverse-proxy:
+        condition: service_healthy
+    networks:
+      - microshop-network

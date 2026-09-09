@@ -3,6 +3,7 @@ using BuildingBlocks.Contracts.Events.Orders;
 using MassTransit;
 using NotificationWorker.Application.Abstractions;
 using NotificationWorker.Application.Notifications.HandleOrderStatusChanged;
+using NotificationWorker.Application.Realtime;
 
 namespace NotificationWorker.Infrastructure.Messaging;
 
@@ -10,12 +11,15 @@ public sealed class OrderStatusChangedIntegrationEventConsumer : IConsumer<Order
 {
     private readonly OrderStatusChangedNotificationHandler _handler;
     private readonly ILogger<OrderStatusChangedIntegrationEventConsumer> _logger;
+    private readonly ICustomerRealtimeNotifier _realtimeNotifier;
 
     public OrderStatusChangedIntegrationEventConsumer(
         OrderStatusChangedNotificationHandler handler,
+        ICustomerRealtimeNotifier realtimeNotifier,
         ILogger<OrderStatusChangedIntegrationEventConsumer> logger)
     {
         _handler = handler;
+        _realtimeNotifier = realtimeNotifier;
         _logger = logger;
     }
 
@@ -49,6 +53,16 @@ public sealed class OrderStatusChangedIntegrationEventConsumer : IConsumer<Order
                 correlationId);
 
             await _handler.HandleAsync(notification, context.CancellationToken);
+            await _realtimeNotifier.PublishAsync(
+                message.CustomerId,
+                new CustomerRealtimeUpdate(
+                    message.EventId,
+                    "order.status-changed",
+                    message.OrderId,
+                    message.CurrentStatus,
+                    message.OccurredAtUtc,
+                    correlationId),
+                context.CancellationToken);
         }
     }
 }

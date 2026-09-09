@@ -2,7 +2,7 @@
 
 - Feature ID: P1-STOREFRONT-EXPERIENCE-2026-09
 - Owner: Product Owner, Commerce Tech Lead, Design Lead
-- Status: Implemented and verified (2026-09-02)
+- Status: Core visual-commerce baseline implemented; advanced commercial surfaces remain deferred by owned backend contracts. P1F realtime foundation implemented (2026-09-09).
 - Depends on: P0 Customer Commerce Experience Specification and Catalog API discovery contract
 
 ## 1. Outcome
@@ -126,3 +126,28 @@ explicit link to the dedicated checkout route; it is not the sole checkout exper
 - Desktop and narrow viewport screenshots were captured against the public Storefront with real Catalog data.
 - scripts/test-portfolio-catalog-media.ps1 verifies seed completeness, category diversity and reachable product media before deployment.
 - docs/qa/storefront-browser-qa-test-cases.md records repeatable browser cases and screenshot evidence.
+
+## 11. P1F - Realtime Customer Experience
+
+Realtime is a **best-effort customer experience signal**, not the source of truth for any order, payment, inventory, or fulfillment decision.
+
+- Browser connects only to same-origin `/realtime/customer-events` through Caddy and ApiGateway. It never connects to a worker, broker, database, or internal endpoint directly.
+- `NotificationWorker` hosts the SignalR delivery module and receives existing RabbitMQ order events after their durable notification handling succeeds. ApiGateway only authenticates and proxies the route; it does not implement commerce rules.
+- The hub requires a valid authenticated customer session. It derives the customer group only from validated JWT claims. Group membership is delivery routing, not authorization; order/payment REST endpoints continue enforcing ownership.
+- A signal contains only `eventId`, `eventType`, `resourceId`, `status`, `occurredAtUtc`, and `correlationId`. It contains no address, contact, provider secret, webhook payload, or payment instrument data.
+- Storefront deduplicates `eventId`, then re-fetches the owned REST resource before changing visible state. On disconnect/reconnect/failure, the page remains usable and REST refresh is the recovery path.
+- Initial supported signals are `order.created` and `order.status-changed`; Order Detail and Account refresh confirmed data. Cart quotes, provider payment state, shipment-specific payloads, operations queues, and marketing notifications require their own owned event/REST contracts before being added.
+- Single-node portfolio runs in-memory SignalR. Multi-replica deployment requires a same-datacenter Redis backplane or a managed SignalR service, plus connection/load testing; do not claim cross-replica delivery before that is configured.
+
+**Acceptance evidence:** anonymous negotiation returns `401`; a signed-in same-origin BFF session negotiates and opens a SignalR connection through Caddy -> Gateway -> NotificationWorker; duplicate signals do not trigger repeated refresh; reconnect preserves the REST recovery path; customer A cannot obtain customer B data through either Hub or REST.
+## 12. Core Implementation Boundary
+
+The current P1 baseline is complete only for capabilities backed by existing services:
+
+- A consistent Storefront header uses the BFF session cookie. It exposes real catalog discovery, checkout, sign-in/out, account and saved-item destinations without exposing a bearer token to browser JavaScript.
+- Home and catalog render categories, product detail, price, stock advisory, search, filter, sorting and cursor state from Catalog data. Product cards use a fixed media stage and an honest failed-image state.
+- Product detail records a bounded local list of viewed **product IDs**. The recently-viewed panel re-fetches each current product from Catalog; it stores no copied price, stock, product content or recommendation claim in the browser.
+- Saved items use the existing Identity-owned saved-item contract and are reachable from the customer header and Account surface.
+- Account/order surfaces keep their existing real API ownership, and receive best-effort SignalR refresh signals documented in section 11.
+
+The following remain explicitly deferred, not hidden placeholders: editorial campaigns, product reviews, ratings, personalized recommendations, promotion claims, delivery promises, full-text/autocomplete search, inventory reservation messaging, shipment tracking and provider-specific payment UI. Each requires an owner contract, data governance, authorization, error behavior and release evidence before implementation.

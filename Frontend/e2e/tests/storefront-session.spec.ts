@@ -12,7 +12,7 @@ async function signIn(page: import("@playwright/test").Page) {
 
 test("customer can sign in and sign out through the BFF session boundary", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Thoughtful tools, ready now." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Built around the things you use." })).toBeVisible();
   await expect(page.getByRole("heading", { name: productName, level: 1 })).toBeVisible();
 
   await signIn(page);

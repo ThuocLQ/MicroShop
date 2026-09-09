@@ -103,6 +103,7 @@ public sealed class ApplyPaymentSagaEventHandler : IRequestHandler<ApplyPaymentS
         CancellationToken cancellationToken)
     {
         if (saga.State == OrderPaymentSagaState.PaymentAuthorized ||
+            saga.State == OrderPaymentSagaState.CashOnDeliveryRequested ||
             saga.State == OrderPaymentSagaState.OrderPaid && eventType == OrderPaymentSagaEventType.PaymentSucceeded)
         {
             var command = new InventoryCommitRequestedIntegrationEvent { OrderId = saga.OrderId };
@@ -175,7 +176,7 @@ public sealed class ApplyPaymentSagaEventHandler : IRequestHandler<ApplyPaymentS
             return Task.CompletedTask;
         }
 
-        if (order.Status == OrderStatus.Paid)
+        if (order.Status is OrderStatus.Paid or OrderStatus.Confirmed)
         {
             return _outboxRepository.AddAsync(OutboxMessageFactory.Create(new PromotionRedeemRequestedIntegrationEvent
             {
@@ -212,6 +213,9 @@ public sealed class ApplyPaymentSagaEventHandler : IRequestHandler<ApplyPaymentS
 
         switch (request.EventType)
         {
+            case OrderPaymentSagaEventType.PaymentCollectionPending:
+                ApplyPaymentCollectionPending(request, order, saga, updatedAtUtc);
+                break;
             case OrderPaymentSagaEventType.PaymentAuthorized:
                 ApplyPaymentAuthorized(request, order, saga, updatedAtUtc);
                 break;
@@ -236,6 +240,40 @@ public sealed class ApplyPaymentSagaEventHandler : IRequestHandler<ApplyPaymentS
             default:
                 throw new InvalidOperationException($"Unsupported payment saga event type '{request.EventType}'.");
         }
+    }
+
+    private static void ApplyPaymentCollectionPending(
+        ApplyPaymentSagaEventCommand request,
+        Order order,
+        OrderPaymentSaga saga,
+        DateTime updatedAtUtc)
+    {
+        if (saga.State is OrderPaymentSagaState.CashOnDeliveryRequested
+            or OrderPaymentSagaState.CashOnDeliveryReadyForFulfillment)
+        {
+            saga.RecordIgnoredEvent(request.EventId, updatedAtUtc);
+            return;
+        }
+
+        if (saga.State is OrderPaymentSagaState.OrderCancelled
+            or OrderPaymentSagaState.TimedOut
+            or OrderPaymentSagaState.CompensationRequired ||
+            order.Status == OrderStatus.Cancelled)
+        {
+            saga.RecordIgnoredEvent(
+                request.EventId,
+                updatedAtUtc,
+                "Cash-on-delivery selection was received after the order had already reached a terminal state.");
+            return;
+        }
+
+        if (order.Status != OrderStatus.PendingPayment)
+        {
+            throw new InvalidOperationException(
+                $"Cash-on-delivery can only be selected while an order is awaiting payment. Current status: {order.Status}.");
+        }
+
+        saga.MarkCashOnDeliveryRequested(request.EventId, updatedAtUtc);
     }
 
     private static void ApplyPaymentAuthorized(

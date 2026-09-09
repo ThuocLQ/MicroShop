@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -58,7 +58,7 @@ jobs:
         id: release-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.MICROSHOP_RELEASE_APP_ID }}
+          client-id: ${{ vars.MICROSHOP_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.MICROSHOP_RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
 

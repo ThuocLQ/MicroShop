@@ -2,7 +2,7 @@
 
 - Feature ID: P1-STOREFRONT-EXPERIENCE-2026-09
 - Owner: Product Owner, Commerce Tech Lead, Design Lead
-- Status: Reopened; discovery/conversion surfaces remain partial. P1F realtime foundation implemented (2026-09-09).
+- Status: Core visual-commerce baseline implemented; advanced commercial surfaces remain deferred by owned backend contracts. P1F realtime foundation implemented (2026-09-09).
 - Depends on: P0 Customer Commerce Experience Specification and Catalog API discovery contract
 
 ## 1. Outcome
@@ -140,3 +140,14 @@ Realtime is a **best-effort customer experience signal**, not the source of trut
 - Single-node portfolio runs in-memory SignalR. Multi-replica deployment requires a same-datacenter Redis backplane or a managed SignalR service, plus connection/load testing; do not claim cross-replica delivery before that is configured.
 
 **Acceptance evidence:** anonymous negotiation returns `401`; a signed-in same-origin BFF session negotiates and opens a SignalR connection through Caddy -> Gateway -> NotificationWorker; duplicate signals do not trigger repeated refresh; reconnect preserves the REST recovery path; customer A cannot obtain customer B data through either Hub or REST.
+## 12. Core Implementation Boundary
+
+The current P1 baseline is complete only for capabilities backed by existing services:
+
+- A consistent Storefront header uses the BFF session cookie. It exposes real catalog discovery, checkout, sign-in/out, account and saved-item destinations without exposing a bearer token to browser JavaScript.
+- Home and catalog render categories, product detail, price, stock advisory, search, filter, sorting and cursor state from Catalog data. Product cards use a fixed media stage and an honest failed-image state.
+- Product detail records a bounded local list of viewed **product IDs**. The recently-viewed panel re-fetches each current product from Catalog; it stores no copied price, stock, product content or recommendation claim in the browser.
+- Saved items use the existing Identity-owned saved-item contract and are reachable from the customer header and Account surface.
+- Account/order surfaces keep their existing real API ownership, and receive best-effort SignalR refresh signals documented in section 11.
+
+The following remain explicitly deferred, not hidden placeholders: editorial campaigns, product reviews, ratings, personalized recommendations, promotion claims, delivery promises, full-text/autocomplete search, inventory reservation messaging, shipment tracking and provider-specific payment UI. Each requires an owner contract, data governance, authorization, error behavior and release evidence before implementation.

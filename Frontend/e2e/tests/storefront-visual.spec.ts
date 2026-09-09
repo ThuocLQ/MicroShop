@@ -94,3 +94,15 @@ test("recently viewed products are resolved from the live Catalog contract", asy
   await expect(page.getByRole("heading", { name: "Recently viewed" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Browser test desk lamp/ })).toBeVisible();
 });
+test("hero copy remains clear of product media", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto("/");
+  const heading = page.getByRole("heading", { level: 1 });
+  const media = page.getByTestId("catalog-hero-media");
+  await expect(heading).toBeVisible();
+  await expect(media).toBeVisible();
+  const [headingBox, mediaBox] = await Promise.all([heading.boundingBox(), media.boundingBox()]);
+  expect(headingBox).not.toBeNull();
+  expect(mediaBox).not.toBeNull();
+  expect((headingBox?.y ?? 0) + (headingBox?.height ?? 0)).toBeLessThanOrEqual(mediaBox?.y ?? 0);
+});

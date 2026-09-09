@@ -31,7 +31,14 @@ try {
       naturalWidth: image.naturalWidth,
     }));
 
+    const heroHeading = document.querySelector("[data-testid=catalog-hero] h1");
+    const heroMedia = document.querySelector("[data-testid=catalog-hero-media]");
+    const heroCopyOverlapsMedia = heroHeading instanceof HTMLElement && heroMedia instanceof HTMLElement
+      ? heroHeading.getBoundingClientRect().bottom > heroMedia.getBoundingClientRect().top
+      : true;
+
     return {
+      heroCopyOverlapsMedia,
       cards: cards.length,
       categories: document.querySelectorAll(".store-category-chip").length,
       fallbackCount: document.querySelectorAll("[data-testid=product-image-fallback]").length,
@@ -54,7 +61,7 @@ try {
   const result = { baseUrl, desktopCheck, mobileCheck };
   console.log(JSON.stringify(result, null, 2));
   const actionMisaligned = desktopCheck.rowActionDeltas.some((delta) => delta > 1);
-  if (desktopCheck.cards === 0 || desktopCheck.categories === 0 || desktopCheck.fallbackCount > 0 || desktopCheck.horizontalOverflow || desktopCheck.unloadedImages > 0 || actionMisaligned || !mobileCheck.categorySelectPresent || mobileCheck.horizontalOverflow) process.exitCode = 1;
+  if (desktopCheck.cards === 0 || desktopCheck.categories === 0 || desktopCheck.heroCopyOverlapsMedia || desktopCheck.fallbackCount > 0 || desktopCheck.horizontalOverflow || desktopCheck.unloadedImages > 0 || actionMisaligned || !mobileCheck.categorySelectPresent || mobileCheck.horizontalOverflow) process.exitCode = 1;
 } finally {
   await browser.close();
 }

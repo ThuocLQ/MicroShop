@@ -634,11 +634,11 @@ export function CatalogScreen() {
       </header>
 
       <div className="border-b border-[var(--line)] bg-[#fbfcfa] px-4 py-2 text-center text-xs text-[var(--muted)] sm:text-sm">Current price and availability are confirmed again when you review your order.</div>
-      <section className="relative isolate min-h-[44rem] overflow-hidden border-b border-[var(--line)] bg-[#e8eee9]" ref={catalogSectionRef}>
-        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 top-44 sm:top-36">
+      <section className="relative isolate min-h-[50rem] overflow-hidden border-b border-[var(--line)] bg-[#e8eee9]" data-testid="catalog-hero" ref={catalogSectionRef}>
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 top-[26rem] sm:top-[24rem]" data-testid="catalog-hero-media">
           {featuredProduct ? <HeroMedia product={featuredProduct} /> : <div className="h-full w-full animate-pulse bg-[#e2e7e1]" />}
         </div>
-        <div className="relative mx-auto flex min-h-[44rem] max-w-7xl flex-col items-center px-4 pb-[22rem] pt-12 text-center sm:px-6 sm:pb-[24rem] sm:pt-16 lg:px-8">
+        <div className="relative z-10 mx-auto flex min-h-[50rem] max-w-7xl flex-col items-center px-4 pb-[27rem] pt-12 text-center sm:px-6 sm:pb-[29rem] sm:pt-16 lg:px-8" data-testid="catalog-hero-content">
           <p className="eyebrow"><Sparkles aria-hidden="true" size={14} /> Current catalog selection</p>
           {featuredProduct ? <><p className="mt-5 text-sm font-semibold text-[var(--accent)]">{featuredProduct.category ?? "Current collection"}</p><h1 className="mt-2 max-w-3xl text-4xl font-semibold tracking-tight text-[var(--foreground)] sm:text-5xl lg:text-6xl">{featuredProduct.name}</h1><p className="mt-4 max-w-2xl text-base leading-7 text-[var(--muted)] sm:text-lg">{featuredProduct.description}</p><div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-3"><p className="text-xl font-semibold">{money.format(featuredProduct.price)}</p><Stock quantity={featuredProduct.stockQuantity} /></div><div className="mt-7 flex flex-wrap justify-center gap-3"><button className="store-primary-button" onClick={() => setSelectedProduct(featuredProduct)} type="button">Explore product <ArrowRight aria-hidden="true" size={17} /></button><Link className="store-secondary-button" href="/products">Shop all products</Link></div></> : <HeroLoading />}
         </div>

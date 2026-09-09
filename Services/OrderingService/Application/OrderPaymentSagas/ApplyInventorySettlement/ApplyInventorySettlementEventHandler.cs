@@ -1,3 +1,4 @@
+using BuildingBlocks.Contracts.Events.Discounts;
 using BuildingBlocks.Contracts.Events.Payments;
 using MediatR;
 using OrderingService.Application.Abstractions;
@@ -77,7 +78,7 @@ public sealed class ApplyInventorySettlementEventHandler
             var updatedAtUtc = DateTime.UtcNow;
 
             if (request.EventType == OrderInventorySettlementEventType.InventoryReleased &&
-                currentSaga.State == OrderPaymentSagaState.PaymentRequested)
+                currentSaga.State is OrderPaymentSagaState.PaymentRequested or OrderPaymentSagaState.CashOnDeliveryRequested)
             {
                 await CancelOrderForExpiredReservationAsync(order, request.EventId, transaction, cancellationToken);
             }
@@ -90,6 +91,17 @@ public sealed class ApplyInventorySettlementEventHandler
                     request.EventId,
                     updatedAtUtc,
                     "InventoryCommitted causation does not match the expected inventory command.");
+            }
+            else if (request.EventType == OrderInventorySettlementEventType.InventoryCommitted &&
+                     currentSaga.State == OrderPaymentSagaState.CashOnDeliveryRequested)
+            {
+                await ConfirmCashOnDeliveryOrderAsync(
+                    order,
+                    currentSaga,
+                    request.EventId,
+                    updatedAtUtc,
+                    transaction,
+                    cancellationToken);
             }
             else
             {
@@ -151,6 +163,67 @@ public sealed class ApplyInventorySettlementEventHandler
         };
         await _outboxRepository.AddAsync(OutboxMessageFactory.Create(statusChanged), transaction, cancellationToken);
         await _outboxRepository.AddAsync(OutboxMessageFactory.CreateKafka(projection), transaction, cancellationToken);
+    }
+
+    private async Task ConfirmCashOnDeliveryOrderAsync(
+        Order order,
+        OrderPaymentSaga saga,
+        Guid eventId,
+        DateTime updatedAtUtc,
+        System.Data.IDbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (order.Status != OrderStatus.PendingPayment)
+        {
+            saga.RecordIgnoredEvent(
+                eventId,
+                updatedAtUtc,
+                $"Inventory committed for cash-on-delivery while order status was {order.Status}.");
+            return;
+        }
+
+        var previousStatus = order.Status;
+        if (!order.MoveToFulfillmentStatus(OrderStatus.Confirmed) ||
+            !await _orderRepository.TryUpdateStatusAsync(
+                order.Id,
+                order.Status,
+                [previousStatus],
+                transaction,
+                cancellationToken))
+        {
+            throw new InvalidOperationException("Order status changed before cash-on-delivery fulfillment was confirmed.");
+        }
+
+        await _outboxRepository.AddAsync(
+            OutboxMessageFactory.Create(OrderIntegrationEventFactory.CreateOrderStatusChanged(order, previousStatus) with
+            {
+                CausationId = eventId.ToString("D")
+            }),
+            transaction,
+            cancellationToken);
+        await _outboxRepository.AddAsync(
+            OutboxMessageFactory.CreateKafka(OrderIntegrationEventFactory.CreateOrderProjectionStatusChanged(order, previousStatus) with
+            {
+                CausationId = eventId.ToString("D")
+            }),
+            transaction,
+            cancellationToken);
+
+        if (order.DiscountReservationId is { } reservationId)
+        {
+            await _outboxRepository.AddAsync(
+                OutboxMessageFactory.Create(new PromotionRedeemRequestedIntegrationEvent
+                {
+                    ReservationId = reservationId,
+                    OrderId = order.Id,
+                    CorrelationId = order.Id.ToString("N"),
+                    CausationId = eventId.ToString("D")
+                }),
+                transaction,
+                cancellationToken);
+        }
+
+        saga.MarkCashOnDeliveryReadyForFulfillment(eventId, updatedAtUtc);
     }
 
     private Task AddPaymentCommandAsync(
@@ -243,7 +316,7 @@ public sealed class ApplyInventorySettlementEventHandler
                 return;
 
             case OrderInventorySettlementEventType.InventoryReleased:
-                if (saga.State == OrderPaymentSagaState.PaymentRequested)
+                if (saga.State is OrderPaymentSagaState.PaymentRequested or OrderPaymentSagaState.CashOnDeliveryRequested)
                 {
                     saga.MarkTimedOut(
                         request.EventId,

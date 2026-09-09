@@ -39,12 +39,18 @@ public static class DependencyInjection
         var unsupportedProviders = enabledProviderNames
             .Where(name => !string.Equals(name, "Sandbox", StringComparison.OrdinalIgnoreCase) &&
                            !string.Equals(name, "PayPal", StringComparison.OrdinalIgnoreCase) &&
-                           !string.Equals(name, "MoMo", StringComparison.OrdinalIgnoreCase))
+                           !string.Equals(name, "MoMo", StringComparison.OrdinalIgnoreCase) &&
+                           !string.Equals(name, CashOnDeliveryPaymentProvider.ProviderName, StringComparison.OrdinalIgnoreCase))
             .ToList();
         if (unsupportedProviders.Count > 0)
         {
             throw new InvalidOperationException(
-                $"Unsupported enabled payment providers: {string.Join(", ", unsupportedProviders)}. Supported values are Sandbox, PayPal, and MoMo.");
+                $"Unsupported enabled payment providers: {string.Join(", ", unsupportedProviders)}. Supported values are CashOnDelivery, Sandbox, PayPal, and MoMo.");
+        }
+
+        if (enabledProviderNames.Contains(CashOnDeliveryPaymentProvider.ProviderName))
+        {
+            services.AddSingleton<IPaymentProvider, CashOnDeliveryPaymentProvider>();
         }
 
         if (enabledProviderNames.Contains("Sandbox"))

@@ -4,13 +4,18 @@ param(
     [string]$GatewayBaseUrl = "http://api.localhost:5027",
     [string]$EnvFile = ".env.local-prod",
     [ValidateSet("Cancellation", "Fulfillment")]
-    [string]$Scenario = "Cancellation",
+    [string]$Scenario = "Fulfillment",
+    [ValidateSet("Sandbox", "CashOnDelivery")]
+    [string]$PaymentProvider = "CashOnDelivery",
     [string]$UserName,
     [string]$Email,
     [string]$Password = "PortfolioSmoke!2026"
 )
 
 $ErrorActionPreference = "Stop"
+if ($PaymentProvider -eq "CashOnDelivery" -and $Scenario -eq "Cancellation") {
+    throw "The COD smoke validates the fulfillment path. Test cancellation before payment selection with a separate order."
+}
 $StorefrontBaseUrl = $StorefrontBaseUrl.TrimEnd("/")
 $storefrontUri = [Uri]$StorefrontBaseUrl
 if (-not $storefrontUri.IsAbsoluteUri -or $storefrontUri.GetLeftPart([UriPartial]::Authority) -ne $StorefrontBaseUrl) {
@@ -177,20 +182,38 @@ Assert-RequestStatus -Uri "$StorefrontBaseUrl/api/orders/$($order.id)" -WebSessi
 Assert-RequestStatus -Uri "$StorefrontBaseUrl/api/addresses/$($address.id)" -WebSession $otherStorefrontSession -Expected 404 -Operation "Cross-account address lookup"
 Write-Host "[ok] customer data isolation through Storefront BFF"
 
-$paymentAction = Invoke-RestMethod -Uri "$StorefrontBaseUrl/api/payments" -Method Post -Headers $headers -ContentType "application/json" -Body (@{ orderId = $order.id } | ConvertTo-Json) -WebSession $storefrontSession
-if ($null -eq $paymentAction.payment -or [string]::IsNullOrWhiteSpace($paymentAction.payment.id) -or $paymentAction.payment.status -ne "PendingAuthorization") {
-    throw "Payment initiation did not return a PendingAuthorization payment action."
+# PowerShell keeps separate cookie jars while exercising the second account. Refresh
+# the primary BFF session so subsequent customer assertions use its own cookie jar.
+$customerRelogin = Invoke-WebRequest -Uri "$StorefrontBaseUrl/api/session" -Method Post -Headers $headers -ContentType "application/json" -Body $credentials -SessionVariable storefrontSession -UseBasicParsing
+Assert-Status -Actual $customerRelogin.StatusCode -Expected 200 -Operation "Customer sign-in refresh"
+
+$paymentHeaders = @{ Origin = $StorefrontBaseUrl; Accept = "application/json"; "Idempotency-Key" = [Guid]::NewGuid().ToString() }
+$paymentAction = Invoke-RestMethod -Uri "$StorefrontBaseUrl/api/payments" -Method Post -Headers $paymentHeaders -ContentType "application/json" -Body (@{ orderId = $order.id; provider = $PaymentProvider } | ConvertTo-Json) -WebSession $storefrontSession
+if ($null -eq $paymentAction.payment -or [string]::IsNullOrWhiteSpace($paymentAction.payment.id)) {
+    throw "Payment initiation did not return a payment action."
 }
-if ($null -eq $paymentAction.action -or -not $paymentAction.action.sandboxCompletionAvailable -or [string]::IsNullOrWhiteSpace($paymentAction.action.expiresAtUtc)) {
-    throw "Portfolio payment initiation did not return a valid sandbox action."
+if ($null -eq $paymentAction.action -or [string]::IsNullOrWhiteSpace($paymentAction.action.expiresAtUtc)) {
+    throw "Portfolio payment initiation did not return a durable payment action."
 }
-Write-Host "[ok] sandbox payment initiation"
+if ($PaymentProvider -eq "CashOnDelivery") {
+    if ($paymentAction.payment.status -ne "AwaitingCollection" -or -not $paymentAction.action.cashOnDelivery) {
+        throw "COD initiation did not return an AwaitingCollection cash-on-delivery payment."
+    }
+    Write-Host "[ok] cash-on-delivery payment initiation"
+}
+else {
+    if ($paymentAction.payment.status -ne "PendingAuthorization" -or -not $paymentAction.action.sandboxCompletionAvailable) {
+        throw "Sandbox initiation did not return a PendingAuthorization sandbox action."
+    }
+    Write-Host "[ok] sandbox payment initiation"
+}
 $initialPaymentStatus = Invoke-RestMethod -Uri "$StorefrontBaseUrl/api/payments/orders/$($order.id)" -Method Get -WebSession $storefrontSession
-if ($initialPaymentStatus.id -ne $paymentAction.payment.id -or $initialPaymentStatus.orderId -ne $order.id -or $initialPaymentStatus.status -ne "PendingAuthorization") {
+if ($initialPaymentStatus.id -ne $paymentAction.payment.id -or $initialPaymentStatus.orderId -ne $order.id -or
+    ($PaymentProvider -eq "CashOnDelivery" -and $initialPaymentStatus.status -ne "AwaitingCollection") -or
+    ($PaymentProvider -eq "Sandbox" -and $initialPaymentStatus.status -ne "PendingAuthorization")) {
     throw "Persisted payment status was not available for the created order."
 }
 Write-Host "[ok] persisted payment status by order"
-
 $finalOrder = $null
 $projectionStatus = $null
 $completedPaymentStatus = $null
@@ -209,36 +232,51 @@ if ($Scenario -eq "Cancellation") {
     Write-Host "[ok] pre-fulfillment order cancellation"
 }
 else {
-    $completion = Invoke-WebRequest -Uri "$StorefrontBaseUrl/api/payments/$($paymentAction.payment.id)/sandbox-completion" -Method Post -Headers $headers -ContentType "application/json" -Body (@{ outcome = "Approve" } | ConvertTo-Json) -WebSession $storefrontSession -UseBasicParsing
-    Assert-Status -Actual $completion.StatusCode -Expected 202 -Operation "Sandbox payment completion"
+    if ($PaymentProvider -eq "Sandbox") {
+        $completion = Invoke-WebRequest -Uri "$StorefrontBaseUrl/api/payments/$($paymentAction.payment.id)/sandbox-completion" -Method Post -Headers $headers -ContentType "application/json" -Body (@{ outcome = "Approve" } | ConvertTo-Json) -WebSession $storefrontSession -UseBasicParsing
+        Assert-Status -Actual $completion.StatusCode -Expected 202 -Operation "Sandbox payment completion"
 
-    for ($attempt = 1; $attempt -le 30; $attempt++) {
-        Start-Sleep -Seconds 1
-        $currentOrders = Invoke-RestMethod -Uri "$StorefrontBaseUrl/api/orders" -Method Get -WebSession $storefrontSession
-        $candidate = @($currentOrders | Where-Object { $_.id -eq $order.id })[0]
-        if ($null -ne $candidate -and $candidate.status -eq "Paid") {
-            $finalOrder = $candidate
-            break
+        for ($attempt = 1; $attempt -le 30; $attempt++) {
+            Start-Sleep -Seconds 1
+            $currentOrders = Invoke-RestMethod -Uri "$StorefrontBaseUrl/api/orders" -Method Get -WebSession $storefrontSession
+            $candidate = @($currentOrders | Where-Object { $_.id -eq $order.id })[0]
+            if ($null -ne $candidate -and $candidate.status -eq "Paid") {
+                $finalOrder = $candidate
+                break
+            }
         }
-    }
-    if ($null -eq $finalOrder) {
-        throw "Order did not become Paid after sandbox payment completion."
-    }
-
-    $completedPaymentStatus = $null
-    for ($attempt = 1; $attempt -le 30; $attempt++) {
-        $candidatePayment = Invoke-RestMethod -Uri "$StorefrontBaseUrl/api/payments/orders/$($order.id)" -Method Get -WebSession $storefrontSession
-        if ($candidatePayment.status -eq "Captured") {
-            $completedPaymentStatus = $candidatePayment
-            break
+        if ($null -eq $finalOrder) {
+            throw "Order did not become Paid after sandbox payment completion."
         }
-        Start-Sleep -Seconds 1
-    }
-    if ($null -eq $completedPaymentStatus) {
-        throw "Payment did not become Captured after sandbox payment completion."
-    }
-    Write-Host "[ok] sandbox payment captured and order paid"
 
+        for ($attempt = 1; $attempt -le 30; $attempt++) {
+            $candidatePayment = Invoke-RestMethod -Uri "$StorefrontBaseUrl/api/payments/orders/$($order.id)" -Method Get -WebSession $storefrontSession
+            if ($candidatePayment.status -eq "Captured") {
+                $completedPaymentStatus = $candidatePayment
+                break
+            }
+            Start-Sleep -Seconds 1
+        }
+        if ($null -eq $completedPaymentStatus) {
+            throw "Payment did not become Captured after sandbox payment completion."
+        }
+        Write-Host "[ok] sandbox payment captured and order paid"
+    }
+    else {
+        for ($attempt = 1; $attempt -le 30; $attempt++) {
+            Start-Sleep -Seconds 1
+            $currentOrders = Invoke-RestMethod -Uri "$StorefrontBaseUrl/api/orders" -Method Get -WebSession $storefrontSession
+            $candidate = @($currentOrders | Where-Object { $_.id -eq $order.id })[0]
+            if ($null -ne $candidate -and $candidate.status -eq "Confirmed") {
+                $finalOrder = $candidate
+                break
+            }
+        }
+        if ($null -eq $finalOrder) {
+            throw "COD order did not become Confirmed after inventory commit."
+        }
+        Write-Host "[ok] cash-on-delivery order confirmed after inventory commit"
+    }
     $adminUserName = Get-EnvFileValue "MICROSHOP_BOOTSTRAP_ADMIN_USERNAME"
     $adminPassword = Get-EnvFileValue "MICROSHOP_BOOTSTRAP_ADMIN_PASSWORD"
     if ([string]::IsNullOrWhiteSpace($adminUserName) -or [string]::IsNullOrWhiteSpace($adminPassword)) {
@@ -267,6 +305,8 @@ else {
     if ($shipment.status -ne "Delivered") { throw "Shipment was not delivered." }
     $shipmentDetail = Invoke-RestMethod -Uri "$GatewayBaseUrl/orders/admin/$($order.id)/shipment" -Method Get -Headers $adminHeaders -TimeoutSec 15
     if (@($shipmentDetail.history.currentStatus) -notcontains "ReadyToShip" -or @($shipmentDetail.history.currentStatus) -notcontains "Shipped" -or @($shipmentDetail.history.currentStatus) -notcontains "Delivered") { throw "Shipment audit history is incomplete." }
+    $customerRelogin = Invoke-WebRequest -Uri "$StorefrontBaseUrl/api/session" -Method Post -Headers $headers -ContentType "application/json" -Body $credentials -SessionVariable storefrontSession -UseBasicParsing
+    Assert-Status -Actual $customerRelogin.StatusCode -Expected 200 -Operation "Customer sign-in refresh before shipment tracking"
     $customerShipment = Invoke-RestMethod -Uri "$StorefrontBaseUrl/api/orders/$($order.id)/shipment" -Method Get -WebSession $storefrontSession
     if ($customerShipment.shipment.status -ne "Delivered" -or @($customerShipment.history.currentStatus) -notcontains "Delivered") {
         throw "Customer shipment tracking did not show delivered state."

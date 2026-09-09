@@ -89,6 +89,7 @@ public static class PaymentProviderPolicy
     public static int GetDisplayOrder(string providerName) =>
         providerName.ToUpperInvariant() switch
         {
+            "CASHONDELIVERY" => 5,
             "PAYPAL" => 10,
             "SEPAY" => 20,
             "MOMO" => 30,

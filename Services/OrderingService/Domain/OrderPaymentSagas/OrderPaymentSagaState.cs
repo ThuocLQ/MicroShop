@@ -13,5 +13,7 @@ public enum OrderPaymentSagaState
     OrderRefunded = 9,
     VoidRequested = 10,
     RefundRequested = 11,
-    CompensationCompleted = 12
+    CompensationCompleted = 12,
+    CashOnDeliveryRequested = 13,
+    CashOnDeliveryReadyForFulfillment = 14
 }

@@ -63,6 +63,19 @@ public sealed class OrderPaymentSaga
         return LastProcessedEventId == eventId;
     }
 
+    public void MarkCashOnDeliveryRequested(Guid eventId, DateTime updatedAtUtc)
+    {
+        State = OrderPaymentSagaState.CashOnDeliveryRequested;
+        MarkProcessed(eventId, updatedAtUtc, null);
+    }
+
+    public void MarkCashOnDeliveryReadyForFulfillment(Guid eventId, DateTime updatedAtUtc)
+    {
+        State = OrderPaymentSagaState.CashOnDeliveryReadyForFulfillment;
+        ExpectedInventoryCommandEventId = null;
+        MarkProcessed(eventId, updatedAtUtc, null);
+    }
+
     public void MarkOrderPaid(Guid eventId, DateTime updatedAtUtc)
     {
         State = OrderPaymentSagaState.OrderPaid;

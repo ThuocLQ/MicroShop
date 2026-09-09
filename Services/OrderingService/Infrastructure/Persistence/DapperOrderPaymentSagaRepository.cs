@@ -19,7 +19,7 @@ public sealed class DapperOrderPaymentSagaRepository : IOrderPaymentSagaReposito
         var rows = await connection.QueryAsync<OrderPaymentSagaRow>(new CommandDefinition("""
             SELECT Id, OrderId, PaymentId, State, StartedAtUtc, UpdatedAtUtc, TimeoutAtUtc, LastProcessedEventId, ExpectedInventoryCommandEventId, LastError
             FROM OrderPaymentSagas
-            WHERE State IN ('PaymentRequested', 'PaymentAuthorized', 'CaptureRequested')
+            WHERE State IN ('PaymentRequested', 'PaymentAuthorized', 'CaptureRequested', 'CashOnDeliveryRequested')
               AND TimeoutAtUtc <= @NowUtc
             ORDER BY TimeoutAtUtc
             LIMIT @BatchSize;

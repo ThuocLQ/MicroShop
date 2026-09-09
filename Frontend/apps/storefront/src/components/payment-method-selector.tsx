@@ -1,6 +1,6 @@
 "use client";
 
-import { CreditCard, LoaderCircle, RefreshCw } from "lucide-react";
+import { Banknote, CreditCard, LoaderCircle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { problemMessage } from "@/lib/http/problem-details";
 
@@ -8,6 +8,7 @@ export type PaymentProviderDescriptor = {
   name: string;
   isSandbox: boolean;
   requiresRedirect: boolean;
+  isCashOnDelivery: boolean;
   supportedCurrencies: string[];
 };
 
@@ -79,7 +80,7 @@ export function PaymentMethodSelector({ currency, disabled = false, onChange, se
     return <p className="mt-4 border-l-2 border-[#d8d6c5] bg-[#fbfaf2] px-3 py-3 text-sm text-[var(--muted)]">No configured payment method supports {currency}.</p>;
   }
 
-  return <fieldset className="mt-4" disabled={disabled}><legend className="text-sm font-semibold">Choose payment method</legend><div className="mt-3 divide-y divide-[var(--line)] border-y border-[var(--line)]">{supportedProviders.map((provider) => <label className="flex cursor-pointer items-center gap-3 px-1 py-3 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60" key={provider.name}><input checked={selectedProvider === provider.name} className="size-4 accent-[var(--accent)]" name="payment-provider" onChange={() => onChange(provider.name)} type="radio" value={provider.name} /><CreditCard aria-hidden="true" className="shrink-0 text-[var(--accent)]" size={18} /><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{provider.name}{provider.isSandbox ? " (test)" : ""}</span><span className="mt-0.5 block text-xs text-[var(--muted)]">{provider.requiresRedirect ? "You will continue on the provider's secure page." : "Provider confirmation is required before your order is paid."}</span></span></label>)}</div></fieldset>;
+  return <fieldset className="mt-4" disabled={disabled}><legend className="text-sm font-semibold">Choose payment method</legend><div className="mt-3 divide-y divide-[var(--line)] border-y border-[var(--line)]">{supportedProviders.map((provider) => <label className="flex cursor-pointer items-center gap-3 px-1 py-3 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60" key={provider.name}><input checked={selectedProvider === provider.name} className="size-4 accent-[var(--accent)]" name="payment-provider" onChange={() => onChange(provider.name)} type="radio" value={provider.name} />{provider.isCashOnDelivery ? <Banknote aria-hidden="true" className="shrink-0 text-[var(--accent)]" size={18} /> : <CreditCard aria-hidden="true" className="shrink-0 text-[var(--accent)]" size={18} />}<span className="min-w-0 flex-1"><span className="block text-sm font-medium">{provider.name}{provider.isSandbox ? " (test)" : ""}</span><span className="mt-0.5 block text-xs text-[var(--muted)]">{provider.isCashOnDelivery ? "Pay cash when your order is delivered. Your order will be confirmed after stock is reserved." : provider.requiresRedirect ? "You will continue on the provider's secure page." : "Provider confirmation is required before your order is paid."}</span></span></label>)}</div></fieldset>;
 }
 
 function isProviderList(value: unknown): value is PaymentProviderDescriptor[] {
@@ -89,6 +90,7 @@ function isProviderList(value: unknown): value is PaymentProviderDescriptor[] {
     return typeof item.name === "string"
       && typeof item.isSandbox === "boolean"
       && typeof item.requiresRedirect === "boolean"
+      && typeof item.isCashOnDelivery === "boolean"
       && Array.isArray(item.supportedCurrencies)
       && item.supportedCurrencies.every((currency) => typeof currency === "string");
   });

@@ -51,7 +51,9 @@ public sealed class PaymentProviderResolver : IPaymentProviderResolver
             .Select(provider => new PaymentProviderDescriptor(
                 provider.Name,
                 string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase),
-                !string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase),
+                !string.Equals(provider.Name, "Sandbox", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(provider.Name, CashOnDeliveryPaymentProvider.ProviderName, StringComparison.OrdinalIgnoreCase),
+                string.Equals(provider.Name, CashOnDeliveryPaymentProvider.ProviderName, StringComparison.OrdinalIgnoreCase),
                 provider.SupportedCurrencies))
             .ToList();
 }

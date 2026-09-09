@@ -6,6 +6,8 @@ namespace PaymentService.Application.Abstractions;
 public interface IPaymentRepository
 {
     Task<Payment> CreateAsync(Payment payment, CancellationToken cancellationToken = default);
+    Task<Payment> CreateAsync(Payment payment, IDbTransaction transaction, CancellationToken cancellationToken = default) =>
+        CreateAsync(payment, cancellationToken);
     Task<Payment?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Payment?> GetByIdAsync(
         Guid id,

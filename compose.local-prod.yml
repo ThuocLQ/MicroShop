@@ -465,8 +465,8 @@ services:
       PaymentWebhooks__SignatureHeaderName: X-MicroShop-Signature
       PaymentWebhooks__SharedSecret: ${MICROSHOP_PAYMENT_WEBHOOK_SECRET:?Set MICROSHOP_PAYMENT_WEBHOOK_SECRET in .env.local-prod}
       PaymentWebhooks__RequireSignature: "true"
-      PaymentProvider__Provider: ${MICROSHOP_PAYMENT_PROVIDER:-Sandbox}
-      PaymentProvider__EnabledProviders__0: ${MICROSHOP_PAYMENT_PROVIDER:-Sandbox}
+      PaymentProvider__Provider: ${MICROSHOP_PAYMENT_PROVIDER:-CashOnDelivery}
+      PaymentProvider__EnabledProviders__0: ${MICROSHOP_PAYMENT_PROVIDER:-CashOnDelivery}
       PaymentProvider__AllowSandbox: ${MICROSHOP_ALLOW_SANDBOX_PAYMENT:-true}
       PaymentProvider__PayPal__Enabled: ${MICROSHOP_PAYPAL_ENABLED:-false}
       PaymentProvider__PayPal__UseSandbox: "true"

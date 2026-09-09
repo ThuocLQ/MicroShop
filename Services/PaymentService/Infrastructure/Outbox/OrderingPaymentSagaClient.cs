@@ -26,6 +26,18 @@ public sealed class OrderingPaymentSagaClient
         }
     }
 
+    public Task ApplyPaymentCollectionPendingAsync(
+        PaymentCollectionPendingIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
+        SendAsync(
+            integrationEvent.OrderId,
+            new ApplyPaymentSagaEventRequest(
+                integrationEvent.EventId,
+                integrationEvent.PaymentId,
+                "PaymentCollectionPending",
+                null),
+            cancellationToken);
+
     public async Task ApplyPaymentSucceededAsync(
         PaymentSucceededIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
